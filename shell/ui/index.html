@@ -611,6 +611,8 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .cast-url{margin-top:14px;padding:16px;border-radius:16px;background:var(--surface-2);text-align:center}
 .cast-url b{display:block;font-size:clamp(18px,3vw,28px);margin-top:6px;word-break:break-all;color:var(--head);user-select:text}
 .cast-steps{margin:6px 0 0;padding-inline-start:22px;color:var(--text-2);line-height:2}
+.cast-pin{margin-top:12px;padding:16px;border-radius:16px;background:var(--surface-2);text-align:center}
+.cast-pin b{display:block;font-size:clamp(30px,5vw,44px);letter-spacing:.22em;margin:10px 0 6px;color:var(--acc);font-weight:800;user-select:text}
 .cast-in{margin-top:14px}
 .cast-in img{width:100%;max-height:46vh;object-fit:contain;background:#000;border-radius:16px}
 .cast-qr{display:flex;align-items:center;gap:18px;justify-content:center;flex-wrap:wrap;margin-top:16px}
@@ -629,7 +631,14 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .side-h.r{right:0;border-radius:14px 0 0 14px}
 .side-h.l{left:0;border-radius:0 14px 14px 0}
 .side-h.hide{opacity:0;pointer-events:none}
-#sidePanel{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;padding:10px 8px;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:sideIn .18s ease-out}
+#sidePanel{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;padding:10px 8px;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:sideIn .18s ease-out;max-height:calc(100vh - 16px);max-width:calc(100vw - 16px);overflow:auto;scrollbar-width:none}
+#sidePanel::-webkit-scrollbar{display:none}
+#sidePanel.sm .side-b{width:42px;height:42px;font-size:20px;border-radius:13px}
+#sidePanel.sm{gap:4px;padding:8px 6px}
+#sidePanel.xs .side-b{width:34px;height:34px;font-size:17px;border-radius:11px}
+#sidePanel.xs{gap:3px;padding:6px 5px}
+#sidePanel.sm .side-b.grip{width:30px;height:30px;font-size:15px}
+#sidePanel.xs .side-b.grip{width:24px;height:24px;font-size:13px}
 #sidePanel.side-r{right:10px}
 #sidePanel.side-l{left:10px}
 @keyframes sideIn{from{opacity:0;transform:translateY(-50%) scale(.9)}to{opacity:1;transform:translateY(-50%) scale(1)}}
@@ -1367,7 +1376,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='1.7';
+const OS_VERSION='1.7.2';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -3760,10 +3769,10 @@ const Extra={
         ${sw('bigCursor','مؤشر ماوس كبير')}
         ${sw('hideCursor','إخفاء المؤشر','مناسب لشاشات اللمس')}
       </div>
-      <div class="card"><h3>${icon('grip')}القائمة الجانبية</h3>
+      <div class="card"><h3>${icon('grip')}قائمة الكتابة فوق الشاشة</h3>
         ${sel('sideDir','اتجاه القائمة',[['v','عمودية'],['h','أفقية']])}
         <div class="row"><span class="lbl">مكان القائمة<span class="hint">تكدر تسحبها من زر النقاط لأي مكان بالشاشة</span></span><button class="btn sm" data-x="sideReset">${icon('restart')}رجّعها لمكانها</button></div>
-        <p class="hint">السهم الصغير على الجانبين يفتح القائمة بكل الصفحات.</p>
+        <p class="hint">هذي الإعدادات تخص قائمة الرسم بس. القائمة الجانبية السريعة (السهم على الجانبين) ثابتة وعمودية دائماً وما تتحرك.</p>
       </div>
       <div class="card"><h3>${icon('keyboard')}كيبورد الشاشة</h3>
         ${sel('oskMode','متى يطلع الكيبورد',[['auto','تلقائياً عند لمس خانة الكتابة'],['always','دائماً (حتى بالماوس)'],['off','مطفأ']])}
@@ -4656,25 +4665,37 @@ const Side={
     addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(this.pop) this.closePop(true); else if(this.open) this.hide(); } });
   },
   /* ---------- panel ---------- */
+  // القائمة السريعة ثابتة على الجانب دائماً؛ التحريك والاتجاه الأفقي لقائمة الرسم فقط
+  draggable(){ return Annot.on; },
   show(side){
     this.side=side||this.side; this.open=true;
-    const p=$('#sidePanel');
-    const horiz=S.sideDir==='h';
-    p.className='side-'+this.side+(horiz?' horiz':'')+(S.sidePos?' free':''); p.hidden=false;
-    if(S.sidePos){ p.style.left=S.sidePos.x+'px'; p.style.top=S.sidePos.y+'px'; p.style.right='auto'; p.style.transform='none'; }
+    const p=$('#sidePanel'), free=this.draggable()&&!!S.sidePos;
+    const horiz=this.draggable()&&S.sideDir==='h';
+    p.className='side-'+this.side+(horiz?' horiz':'')+(free?' free':''); p.hidden=false;
+    if(free){ p.style.left=S.sidePos.x+'px'; p.style.top=S.sidePos.y+'px'; p.style.right='auto'; p.style.transform='none'; }
     else { p.style.left=p.style.top=p.style.right=p.style.transform=''; }
     p.innerHTML=(Annot.on?this.drawTools():this.mainTools()).map(b=>b===null?'<span class="side-sep"></span>':
       `<button class="side-b${b.on?' on':''}${b.danger?' danger':''}${b.grip?' grip':''}" data-sb="${b.k}" title="${esc(b.t)}" aria-label="${esc(b.t)}">${icon(b.i)}</button>`).join('');
-    $$('#sideWrap .side-h').forEach(h=>h.classList.toggle('hide',h.dataset.sideh===this.side||!!S.sidePos));
+    $$('#sideWrap .side-h').forEach(h=>h.classList.toggle('hide',h.dataset.sideh===this.side||free));
+    this.fit(p,horiz);
     this.clampPos();
   },
+  /* تصغير الأزرار تلقائياً حتى تدخل القائمة كاملة بالشاشة (شاشات الصف صغيرة) */
+  fit(p,horiz){
+    p.classList.remove('sm','xs');
+    const room=()=>horiz?(p.scrollWidth<=innerWidth*0.92):(p.scrollHeight<=innerHeight*0.88);
+    if(room()) return;
+    p.classList.add('sm'); if(room()) return;
+    p.classList.remove('sm'); p.classList.add('xs');
+  },
   clampPos(){
-    if(!S.sidePos) return;
+    if(!S.sidePos||!this.draggable()) return;
     const p=$('#sidePanel'), r=p.getBoundingClientRect();
     S.sidePos.x=clamp(S.sidePos.x,4,innerWidth-r.width-4); S.sidePos.y=clamp(S.sidePos.y,4,innerHeight-r.height-4);
     p.style.left=S.sidePos.x+'px'; p.style.top=S.sidePos.y+'px';
   },
   startDrag(e){
+    if(!this.draggable()) return;
     const p=$('#sidePanel'), r=p.getBoundingClientRect();
     const dx=e.clientX-r.left, dy=e.clientY-r.top;
     this.closePop();
@@ -4684,8 +4705,7 @@ const Side={
   },
   hide(){ this.open=false; this.closePop(); $('#sidePanel').hidden=true; $$('#sideWrap .side-h').forEach(h=>h.classList.remove('hide')); },
   mainTools(){
-    return [{k:'grip',t:'اسحب لتحريك القائمة',i:'grip',grip:true},null,
-      {k:'files',t:'الملفات',i:'folder'},{k:'bt',t:'البلوتوث',i:'bluetooth'},{k:'board',t:'السبورة',i:'board'},
+    return [{k:'files',t:'الملفات',i:'folder'},{k:'bt',t:'البلوتوث',i:'bluetooth'},{k:'board',t:'السبورة',i:'board'},
       {k:'shot',t:'لقطة شاشة',i:'camera'},{k:'cast',t:'العرض اللاسلكي',i:'cast'},null,
       {k:'annot',t:'الكتابة فوق الشاشة',i:'penScreen'},null,{k:'close',t:'إغلاق القائمة',i:'x'}];
   },
@@ -4736,7 +4756,7 @@ const Side={
     $$('#sidePop input[type=range]').forEach(r=>setRangeFill(r));
     const r=$('#sidePanel').getBoundingClientRect(), pw=el.offsetWidth, ph=el.offsetHeight;
     let left,top;
-    if(S.sideDir==='h'){ left=clamp(r.left+r.width/2-pw/2,8,innerWidth-pw-8); top=r.top>innerHeight/2?r.top-ph-10:r.bottom+10; }
+    if(this.draggable()&&S.sideDir==='h'){ left=clamp(r.left+r.width/2-pw/2,8,innerWidth-pw-8); top=r.top>innerHeight/2?r.top-ph-10:r.bottom+10; }
     else { left=r.left>innerWidth/2?r.left-pw-10:r.right+10; top=clamp(r.top,8,innerHeight-ph-8); }
     el.style.left=clamp(left,8,Math.max(8,innerWidth-pw-8))+'px'; el.style.top=clamp(top,8,Math.max(8,innerHeight-ph-8))+'px';
   },
@@ -5032,6 +5052,7 @@ const QR=(()=>{
    ===================================================================== */
 ICONS.cast='<path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><circle cx="2" cy="20" r="1" fill="currentColor"/>';
 ICONS.screenIn='<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M12 7v6M9 10l3 3 3-3"/>';
+ICONS.phone='<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>';
 ICONS.qr='<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2M14 19h3M19 18v3h2"/>';
 ICONS.apple='<path d="M12 6c0-2 1.5-3.5 3.5-3.6C15.7 4.4 14.2 6 12 6Z"/><path d="M17.5 12.5c0-2 1.3-3 1.4-3.1-.8-1.1-2-1.3-2.5-1.3-1.1-.1-2.1.6-2.7.6-.6 0-1.4-.6-2.4-.6-1.8 0-3.7 1.5-3.7 4.3 0 1.7.6 3.5 1.5 4.7.7 1 1.4 1.8 2.4 1.8s1.3-.6 2.4-.6 1.4.6 2.4.6 1.7-.9 2.4-1.9c.5-.7.8-1.4 1-1.8-1.6-.7-2.2-2.2-2.2-2.7Z"/>';
 const Cast={
@@ -5061,7 +5082,7 @@ const Cast={
   render(force){
     const m=$('#castMain'); if(!m) return;
     const s=this.st||{};
-    const sig=JSON.stringify([s.on,s.url,s.viewers,s.incoming,s.from,s.tool,s.video,s.videoTool,s.videoErr,s.airplay]);
+    const sig=JSON.stringify([s.on,s.url,s.viewers,s.incoming,s.from,s.tool,s.video,s.videoTool,s.videoErr,s.airplay,s.https,s.pin]);
     if(!force&&sig===this.sig){ if(s.incoming) this.tickImg($('#castImg')); return; }
     this.sig=sig;
     const on=!!s.on, url=s.url||'', ap=s.airplay||'missing';
@@ -5083,15 +5104,26 @@ const Cast={
         ${on&&s.videoTool&&!s.video&&s.videoErr?`<p class="hint" style="color:var(--warn)">${icon('info')} ${esc(s.videoErr)}</p>`:''}
       </div>
 
+      <div class="card"><h3>${icon('phone')}شارك شاشة هاتف أندرويد — تطبيق Alharthia Cast</h3>
+        ${on?`<div class="cast-pin"><span class="hint">افتح التطبيق بالهاتف، راح يلگي الجهاز لوحده، وبعدها اكتب هذا الرمز:</span>
+            <b dir="ltr">${esc(s.pin||'—')}</b>
+            <span class="hint">الرمز يتغير كل مرة تشغّل العرض اللاسلكي.</span></div>`
+          :`<p class="hint">شغّل العرض اللاسلكي فوك، وبعدها يطلع لك رمز الدخول.</p>`}
+        <p class="hint">${icon('info')} التطبيق مجاني ومصنوع خصيصاً لهذا النظام — الطالب ينزّله مرة وحدة.</p>
+      </div>
+
       <div class="card"><h3>${icon('screenIn')}استقبل شاشة جهاز ثاني على هذا الجهاز</h3>
-        ${on?`<ol class="cast-steps"><li>افتح نفس العنوان أعلاه بمتصفح الكمبيوتر (Chrome أو Edge).</li>
-            <li>اضغط «شارك شاشتك مع الجهاز».</li><li>اختار الشاشة أو النافذة اللي تريد تعرضها.</li></ol>`
+        ${on?`<ol class="cast-steps"><li>افتح نفس العنوان أعلاه بمتصفح <b>كمبيوتر</b> (Chrome أو Edge).</li>
+            <li>اضغط «شارك شاشتك مع الجهاز» — راح ينقلك لرابط آمن https.</li>
+            <li>إذا طلع تحذير بالمتصفح اضغط <b dir="ltr">Advanced</b> ثم <b dir="ltr">Proceed</b> (الشهادة محلية مالت جهاز الصف).</li>
+            <li>اختار الشاشة أو النافذة اللي تريد تعرضها.</li></ol>
+          ${s.https===false?`<p class="hint" style="color:var(--warn)">${icon('info')} الرابط الآمن ما اشتغل — تأكد إن openssl مثبت: sudo apt install openssl</p>`:''}
+          <p class="hint">${icon('info')} <b>الهواتف ما تكدر تشارك شاشتها من المتصفح</b> — لا أندرويد ولا آيفون. الآيفون يستخدم AirPlay تحت، والأندرويد يحتاج كمبيوتر.</p>`
           :`<p class="hint">شغّل العرض اللاسلكي أولاً حتى تكدر تستقبل.</p>`}
         <div class="row"><label for="castAir">${icon('apple')} استقبال من آيفون / آيباد (AirPlay)
           <span class="hint">من تشغّله، افتح «مركز التحكم» بالآيفون ← «عكس الشاشة» ← اختر <b dir="ltr">Alharthia</b></span></label>
           <label class="sw"><input type="checkbox" id="castAir" ${ap==='on'?'checked':''} ${ap==='missing'?'disabled':''}><span></span></label></div>
         ${ap==='missing'?`<p class="hint" style="color:var(--warn)">${icon('info')} غير مثبت — نفّذ: sudo apt install uxplay avahi-daemon</p>`:''}
-        <p class="hint">${icon('info')} أجهزة أندرويد تشارك شاشتها عن طريق نفس الرابط من متصفح كروم.</p>
         ${s.incoming?`<div class="cast-in"><div class="hint">يعرض الآن: <b>${esc(s.from||'جهاز')}</b></div>
             <img id="castImg" alt="">
             <div class="btns" style="margin-top:10px"><button class="btn primary" data-cast="full">${icon('fit')}ملء الشاشة</button></div></div>`

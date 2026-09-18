@@ -236,6 +236,8 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .cast-url{margin-top:14px;padding:16px;border-radius:16px;background:var(--surface-2);text-align:center}
 .cast-url b{display:block;font-size:clamp(18px,3vw,28px);margin-top:6px;word-break:break-all;color:var(--head);user-select:text}
 .cast-steps{margin:6px 0 0;padding-inline-start:22px;color:var(--text-2);line-height:2}
+.cast-pin{margin-top:12px;padding:16px;border-radius:16px;background:var(--surface-2);text-align:center}
+.cast-pin b{display:block;font-size:clamp(30px,5vw,44px);letter-spacing:.22em;margin:10px 0 6px;color:var(--acc);font-weight:800;user-select:text}
 .cast-in{margin-top:14px}
 .cast-in img{width:100%;max-height:46vh;object-fit:contain;background:#000;border-radius:16px}
 .cast-qr{display:flex;align-items:center;gap:18px;justify-content:center;flex-wrap:wrap;margin-top:16px}
@@ -254,7 +256,14 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .side-h.r{right:0;border-radius:14px 0 0 14px}
 .side-h.l{left:0;border-radius:0 14px 14px 0}
 .side-h.hide{opacity:0;pointer-events:none}
-#sidePanel{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;padding:10px 8px;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:sideIn .18s ease-out}
+#sidePanel{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;padding:10px 8px;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:sideIn .18s ease-out;max-height:calc(100vh - 16px);max-width:calc(100vw - 16px);overflow:auto;scrollbar-width:none}
+#sidePanel::-webkit-scrollbar{display:none}
+#sidePanel.sm .side-b{width:42px;height:42px;font-size:20px;border-radius:13px}
+#sidePanel.sm{gap:4px;padding:8px 6px}
+#sidePanel.xs .side-b{width:34px;height:34px;font-size:17px;border-radius:11px}
+#sidePanel.xs{gap:3px;padding:6px 5px}
+#sidePanel.sm .side-b.grip{width:30px;height:30px;font-size:15px}
+#sidePanel.xs .side-b.grip{width:24px;height:24px;font-size:13px}
 #sidePanel.side-r{right:10px}
 #sidePanel.side-l{left:10px}
 @keyframes sideIn{from{opacity:0;transform:translateY(-50%) scale(.9)}to{opacity:1;transform:translateY(-50%) scale(1)}}

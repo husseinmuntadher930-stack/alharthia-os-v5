@@ -13,6 +13,7 @@ import html, json, os, queue, secrets, shutil, socket, struct, subprocess, threa
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 PORT = int(os.environ.get("ALH_SHARE_PORT", "8766"))
+DEVICE_NAME = os.environ.get("ALH_NAME", "شاشة الصف")
 FRAME_MIN_MS = 220          # how often the screen is captured at most
 VIEWER_TIMEOUT = 8          # seconds without a frame request = viewer left
 IN_TIMEOUT = 6              # seconds without an incoming frame = sender stopped
@@ -25,7 +26,25 @@ STATE = {
 
 
 # ------------------------------------------------------------------ live H.264 video
-HLS_DIR = "/run/alharthia/hls"
+def _hls_dir():
+    """مجلد مقاطع البث — لازم يكون قابل للكتابة من مستخدم الواجهة (مو /run لأنه للجذر)."""
+    import tempfile
+    for base in (os.environ.get("XDG_RUNTIME_DIR"), "/dev/shm", tempfile.gettempdir()):
+        if not base:
+            continue
+        d = os.path.join(base, "alharthia-hls")
+        try:
+            os.makedirs(d, exist_ok=True)
+            t = os.path.join(d, ".w")
+            open(t, "wb").close()
+            os.remove(t)
+            return d
+        except OSError:
+            continue
+    return os.path.join(tempfile.gettempdir(), "alharthia-hls")
+
+
+HLS_DIR = _hls_dir()
 VIDEO = {
     "rec": None, "ff": None, "on": False, "init": b"", "clients": set(),
     "lock": threading.Lock(), "err": "", "fps": 30, "height": 720,
@@ -109,12 +128,16 @@ def video_start():
     if not video_tools():
         VIDEO["err"] = "wf-recorder أو ffmpeg غير مثبت"
         return False
-    os.makedirs(HLS_DIR, exist_ok=True)
-    for f in os.listdir(HLS_DIR):
-        try:
-            os.remove(os.path.join(HLS_DIR, f))
-        except OSError:
-            pass
+    try:
+        os.makedirs(HLS_DIR, exist_ok=True)
+        for f in os.listdir(HLS_DIR):
+            try:
+                os.remove(os.path.join(HLS_DIR, f))
+            except OSError:
+                pass
+    except OSError as e:
+        VIDEO["err"] = "تعذر تجهيز مجلد البث: %s" % e
+        return False
     h, fps = VIDEO["height"], VIDEO["fps"]
     rec = None
     for cmd in _rec_cmds(fps, h):
@@ -175,6 +198,214 @@ def video_drop(q):
         VIDEO["clients"].discard(q)
 
 
+HTTPS_PORT = PORT + 1
+TLS = {"srv": None, "cert": "", "key": "", "ip": ""}
+
+
+def _tls_dir():
+    import tempfile
+    for base in (os.path.expanduser("~/.cache"), os.environ.get("XDG_RUNTIME_DIR"), tempfile.gettempdir()):
+        if not base:
+            continue
+        d = os.path.join(base, "alharthia")
+        try:
+            os.makedirs(d, exist_ok=True)
+            return d
+        except OSError:
+            continue
+    return tempfile.gettempdir()
+
+
+def ensure_cert(ip):
+    """شهادة ذاتية التوقيع — المتصفحات ما تسمح بمشاركة الشاشة إلا على https."""
+    if TLS["cert"] and TLS["ip"] == ip and os.path.exists(TLS["cert"]):
+        return True
+    if not shutil.which("openssl"):
+        return False
+    d = _tls_dir()
+    cert, key = os.path.join(d, "share-cert.pem"), os.path.join(d, "share-key.pem")
+    try:
+        subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
+             "-keyout", key, "-out", cert, "-subj", "/CN=Alharthia OS",
+             "-addext", "subjectAltName=IP:%s,DNS:alharthia.local,DNS:alharthia" % ip],
+            capture_output=True, timeout=60, check=True)
+    except Exception:  # noqa
+        return False
+    TLS.update(cert=cert, key=key, ip=ip)
+    return True
+
+
+def start_tls():
+    if TLS["srv"]:
+        return True
+    import ssl
+    ip = lan_ip()
+    if not ensure_cert(ip):
+        return False
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(TLS["cert"], TLS["key"])
+        srv = ThreadingHTTPServer(("0.0.0.0", HTTPS_PORT), ShareHandler)
+        srv.daemon_threads = True
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+    except Exception:  # noqa
+        return False
+    TLS["srv"] = srv
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return True
+
+
+def stop_tls():
+    srv = TLS["srv"]
+    TLS["srv"] = None
+    if srv:
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+
+
+# ------------------------------------------------------- استقبال بث MJPEG من تطبيق بالهاتف
+# يشتغل مع ScreenStream ومع IP Webcam وأي تطبيق يبث multipart/x-mixed-replace
+PULL = {"on": False, "url": "", "err": "", "thread": None, "stop": False, "name": ""}
+PULL_PATHS = ["", "stream.mjpeg", "stream.mjpg", "mjpeg", "video", "videofeed", "stream"]
+
+
+def _pull_open(url):
+    """يجرب مسارات معروفة لحد ما يلگى بث MJPEG حقيقي."""
+    import urllib.request, urllib.parse
+    u = url.strip()
+    if not u:
+        return None, "ماكو عنوان"
+    if "://" not in u:
+        u = "http://" + u
+    parts = urllib.parse.urlsplit(u)
+    if not parts.port and parts.scheme == "http" and ":" not in parts.netloc:
+        parts = parts._replace(netloc=parts.netloc + ":8080")
+    base = urllib.parse.urlunsplit(parts)
+    tried = [base] if parts.path not in ("", "/") else [base.rstrip("/") + "/" + x for x in PULL_PATHS]
+    last = "ماكو رد من الهاتف"
+    for cand in tried:
+        try:
+            r = urllib.request.urlopen(cand, timeout=6)
+        except Exception as e:  # noqa
+            last = str(e)
+            continue
+        ctype = r.headers.get("Content-Type", "")
+        if "multipart" in ctype:
+            b = ctype.split("boundary=")[-1].strip().strip('"') if "boundary=" in ctype else "--"
+            return (r, b), ""
+        r.close()
+        last = "الرابط مو بث فيديو"
+    return None, last
+
+
+def _pull_loop(url):
+    got = _pull_open(url)
+    stream, err = got
+    if not stream:
+        PULL.update(on=False, err=err)
+        return
+    r, boundary = stream
+    PULL.update(on=True, err="")
+    bnd = ("--" + boundary).encode() if not boundary.startswith("--") else boundary.encode()
+    buf = b""
+    try:
+        while not PULL["stop"]:
+            chunk = r.read(32768)
+            if not chunk:
+                break
+            buf += chunk
+            while True:
+                a = buf.find(b"\xff\xd8")
+                b2 = buf.find(b"\xff\xd9", a + 2) if a >= 0 else -1
+                if a < 0 or b2 < 0:
+                    break
+                jpg = buf[a:b2 + 2]
+                buf = buf[b2 + 2:]
+                with STATE["lock"]:
+                    STATE["in_frame"], STATE["in_t"] = jpg, time.time()
+                    STATE["in_name"] = PULL["name"] or "هاتف"
+            if len(buf) > 4 * 1024 * 1024:
+                buf = buf[-1024:]
+    except Exception as e:  # noqa
+        PULL["err"] = str(e)
+    finally:
+        try:
+            r.close()
+        except Exception:  # noqa
+            pass
+        PULL.update(on=False, thread=None)
+
+
+def pull_start(url, name=""):
+    pull_stop()
+    PULL.update(stop=False, url=url, err="", name=(name or "")[:40])
+    t = threading.Thread(target=_pull_loop, args=(url,), daemon=True)
+    PULL["thread"] = t
+    t.start()
+    for _ in range(40):          # ننطر شوية حتى نرد بالنتيجة الحقيقية
+        time.sleep(0.2)
+        if PULL["on"] or PULL["err"]:
+            break
+    return PULL["on"], PULL["err"]
+
+
+def pull_stop():
+    PULL["stop"] = True
+    t = PULL.get("thread")
+    if t and t.is_alive():
+        t.join(timeout=2)
+    PULL.update(on=False, thread=None, stop=False)
+
+
+# ------------------------------------------------ اكتشاف تلقائي (تطبيق Alharthia Cast)
+DISCO_PORT = 8765          # التطبيق يبث سؤال على هذا المنفذ والجهاز يرد
+DISCO = {"sock": None, "stop": False}
+DISCO_ASK = b"ALHARTHIA?"
+
+
+def _disco_loop(sock):
+    while not DISCO["stop"]:
+        try:
+            data, addr = sock.recvfrom(256)
+        except OSError:
+            break
+        if not data.startswith(DISCO_ASK):
+            continue
+        try:
+            reply = json.dumps({
+                "app": "alharthia", "name": DEVICE_NAME, "ip": lan_ip(),
+                "port": PORT, "pinLen": 6, "v": 1,
+            }).encode()
+            sock.sendto(reply, addr)
+        except OSError:
+            pass
+
+
+def disco_start():
+    if DISCO["sock"]:
+        return True
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", DISCO_PORT))
+    except OSError:
+        return False
+    DISCO.update(sock=sock, stop=False)
+    threading.Thread(target=_disco_loop, args=(sock,), daemon=True).start()
+    return True
+
+
+def disco_stop():
+    DISCO["stop"] = True
+    s = DISCO.get("sock")
+    DISCO["sock"] = None
+    if s:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
 def lan_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -215,6 +446,9 @@ def status():
         "incoming": bool(STATE["in_frame"]) and now - STATE["in_t"] < IN_TIMEOUT,
         "from": STATE["in_name"], "tool": bool(_has_grim()),
         "video": VIDEO["on"], "videoTool": video_tools(), "videoErr": VIDEO["err"],
+        "https": bool(TLS["srv"]), "httpsPort": HTTPS_PORT,
+        "pull": PULL["on"], "pullUrl": PULL["url"], "pullErr": PULL["err"],
+        "sendUrl": f"https://{lan_ip()}:{HTTPS_PORT}/send?k={STATE['key']}" if (STATE["on"] and TLS["srv"]) else "",
         "airplay": airplay_status(),
     }
 
@@ -239,7 +473,14 @@ small{color:#7e8db0;display:block;margin-top:16px;line-height:1.7}
 </style></head><body><div class="card">
 <h1>Alharthia OS — العرض اللاسلكي</h1><p>اختر شنو تريد تسوي</p>
 <a class="btn" href="/view?k=KEY">👁️ شاهد شاشة الجهاز</a>
-<button class="btn ghost" onclick="location.href='/send?k=KEY'">🖥️ شارك شاشتك مع الجهاز</button>
+<button class="btn ghost" id="sendBtn">🖥️ شارك شاشتك مع الجهاز</button>
+<script>
+document.getElementById('sendBtn').onclick=function(){
+  var u='/send?k=KEY';
+  if(!window.isSecureContext && '%SENDURL%'.indexOf('https')===0) u='%SENDURL%';
+  location.href=u;
+};
+</script>
 <small>المشاهدة تشتغل على الآيفون والآيباد والأندرويد والكمبيوتر — بث مباشر ٣٠ إطار/ثانية.<br>مشاركة شاشتك مع الجهاز تحتاج متصفح كمبيوتر (Chrome / Edge).<br>آيفون / آيباد: تكدر تسوي «عكس الشاشة» (AirPlay) واختار Alharthia.</small>
 </div></body></html>"""
 
@@ -347,20 +588,50 @@ button.stop{background:#dc2626}
 input{width:100%;padding:12px;border-radius:12px;border:1px solid #27324f;background:#0f172a;color:#fff;margin:10px 0 16px;font-size:16px}
 video{width:100%;border-radius:14px;margin-top:16px;background:#000}
 #st{color:#9fb0d0;margin-top:14px}
+#why{margin-top:16px;padding:16px;border-radius:14px;background:#0f172a;border:1px solid #27324f;text-align:right;line-height:1.9}
+#why .sub{color:#9fb0d0;font-size:15px}
+a.lnk{display:block;padding:15px;border-radius:14px;background:#f0703e;color:#fff;font-weight:700;text-decoration:none;text-align:center}
 </style></head><body><div class="card">
 <h1 style="margin:0 0 14px;font-size:20px">شارك شاشتك مع Alharthia</h1>
 <input id="nm" placeholder="اسمك (يطلع على شاشة الصف)" value="جهاز ضيف">
 <button id="go">ابدأ المشاركة</button>
+<div id="why" hidden></div>
 <div id="st">اختار «شاشة كاملة» أو نافذة من المتصفح.</div>
 <video id="pv" autoplay muted playsinline></video>
 </div>
 <script>
 const k=new URLSearchParams(location.search).get('k')||'';
 const go=document.getElementById('go'), st=document.getElementById('st'), pv=document.getElementById('pv');
+const SENDURL='%SENDURL%';
+const MOBILE=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 let stream=null, timer=null;
 const cv=document.createElement('canvas'), cx=cv.getContext('2d');
+function why(){
+  const box=document.getElementById('why');
+  const off=()=>{ box.hidden=false; go.style.display='none'; st.style.display='none'; pv.style.display='none'; };
+  if(MOBILE){
+    box.innerHTML='<b>الهواتف ما تكدر تشارك شاشتها من المتصفح</b><br>'+
+      '<span class="sub">• <b>آيفون / آيباد</b>: افتح «مركز التحكم» ← «عكس الشاشة» ← اختر <b>Alharthia</b>.<br>'+
+      '• <b>أندرويد</b>: استخدم كمبيوتر، أو اعرض الملف نفسه على شاشة الصف.<br>'+
+      '• من الهاتف تكدر <b>تشاهد</b> شاشة الصف بس — ارجع واضغط «شاهد شاشة الجهاز».</span>';
+    off(); return true;
+  }
+  if(!window.isSecureContext){
+    box.innerHTML='<b>لازم تفتح الرابط الآمن أولاً</b><br>'+
+      '<span class="sub">المتصفح ما يسمح بمشاركة الشاشة إلا على https. اضغط الزر، وإذا طلعت صفحة تحذير اضغط '+
+      '<b>Advanced</b> ثم <b>Proceed</b> (الشهادة محلية ومالت جهاز الصف).</span>'+
+      '<div style="margin-top:14px"><a class="lnk" href="'+SENDURL+'">🔒 افتح الرابط الآمن</a></div>';
+    off(); return true;
+  }
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){
+    box.innerHTML='<b>هذا المتصفح ما يدعم مشاركة الشاشة</b><br><span class="sub">استخدم Chrome أو Edge على كمبيوتر.</span>';
+    off(); return true;
+  }
+  return false;
+}
+addEventListener('DOMContentLoaded',why); why();
 async function start(){
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){ st.textContent='هذا المتصفح ما يدعم مشاركة الشاشة. استخدم Chrome أو Edge على الكمبيوتر.'; return; }
+  if(why()) return;
   try{ stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:8},audio:false}); }
   catch(e){ st.textContent='تم إلغاء المشاركة'; return; }
   pv.srcObject=stream; go.textContent='إيقاف المشاركة'; go.className='stop'; st.textContent='المشاركة شغالة — شاشتك تطلع على شاشة الصف';
@@ -391,12 +662,17 @@ class ShareHandler(BaseHTTPRequestHandler):
             BaseHTTPRequestHandler.log_message(self, *a)
 
     def key_ok(self):
+        """المفتاح الطويل من الرابط، أو رمز الـ PIN (٦ أرقام) اللي يكتبه التطبيق."""
         from urllib.parse import urlparse, parse_qs
         q = parse_qs(urlparse(self.path).query)
-        return secrets.compare_digest((q.get("k") or [""])[0], STATE["key"])
+        if secrets.compare_digest((q.get("k") or [""])[0], STATE["key"]):
+            return True
+        pin = (q.get("pin") or [""])[0] or (self.headers.get("X-Alharthia-Pin") or "")
+        return bool(STATE["pin"]) and secrets.compare_digest(pin, STATE["pin"])
 
     def html(self, page):
-        data = page.replace("KEY", STATE["key"]).encode()
+        send = f"https://{lan_ip()}:{HTTPS_PORT}/send?k={STATE['key']}" if TLS["srv"] else ""
+        data = page.replace("%SENDURL%", send).replace("KEY", STATE["key"]).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
@@ -566,12 +842,23 @@ def start():
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     STATE["thread"] = t
-    video_start()
+    try:
+        video_start()
+    except Exception as e:  # noqa - البث المباشر إضافة، وإذا فشل نكمل بالصور المتتابعة
+        VIDEO["err"] = str(e)
+    try:
+        start_tls()
+    except Exception:  # noqa
+        pass
+    disco_start()
     return status()
 
 
 def stop():
     video_stop()
+    stop_tls()
+    pull_stop()
+    disco_stop()
     srv = STATE["srv"]
     STATE.update(on=False, srv=None, viewers={}, in_frame=b"", in_name="", frame=b"")
     if srv:

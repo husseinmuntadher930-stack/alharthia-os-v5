@@ -34,25 +34,37 @@ const Side={
     addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(this.pop) this.closePop(true); else if(this.open) this.hide(); } });
   },
   /* ---------- panel ---------- */
+  // القائمة السريعة ثابتة على الجانب دائماً؛ التحريك والاتجاه الأفقي لقائمة الرسم فقط
+  draggable(){ return Annot.on; },
   show(side){
     this.side=side||this.side; this.open=true;
-    const p=$('#sidePanel');
-    const horiz=S.sideDir==='h';
-    p.className='side-'+this.side+(horiz?' horiz':'')+(S.sidePos?' free':''); p.hidden=false;
-    if(S.sidePos){ p.style.left=S.sidePos.x+'px'; p.style.top=S.sidePos.y+'px'; p.style.right='auto'; p.style.transform='none'; }
+    const p=$('#sidePanel'), free=this.draggable()&&!!S.sidePos;
+    const horiz=this.draggable()&&S.sideDir==='h';
+    p.className='side-'+this.side+(horiz?' horiz':'')+(free?' free':''); p.hidden=false;
+    if(free){ p.style.left=S.sidePos.x+'px'; p.style.top=S.sidePos.y+'px'; p.style.right='auto'; p.style.transform='none'; }
     else { p.style.left=p.style.top=p.style.right=p.style.transform=''; }
     p.innerHTML=(Annot.on?this.drawTools():this.mainTools()).map(b=>b===null?'<span class="side-sep"></span>':
       `<button class="side-b${b.on?' on':''}${b.danger?' danger':''}${b.grip?' grip':''}" data-sb="${b.k}" title="${esc(b.t)}" aria-label="${esc(b.t)}">${icon(b.i)}</button>`).join('');
-    $$('#sideWrap .side-h').forEach(h=>h.classList.toggle('hide',h.dataset.sideh===this.side||!!S.sidePos));
+    $$('#sideWrap .side-h').forEach(h=>h.classList.toggle('hide',h.dataset.sideh===this.side||free));
+    this.fit(p,horiz);
     this.clampPos();
   },
+  /* تصغير الأزرار تلقائياً حتى تدخل القائمة كاملة بالشاشة (شاشات الصف صغيرة) */
+  fit(p,horiz){
+    p.classList.remove('sm','xs');
+    const room=()=>horiz?(p.scrollWidth<=innerWidth*0.92):(p.scrollHeight<=innerHeight*0.88);
+    if(room()) return;
+    p.classList.add('sm'); if(room()) return;
+    p.classList.remove('sm'); p.classList.add('xs');
+  },
   clampPos(){
-    if(!S.sidePos) return;
+    if(!S.sidePos||!this.draggable()) return;
     const p=$('#sidePanel'), r=p.getBoundingClientRect();
     S.sidePos.x=clamp(S.sidePos.x,4,innerWidth-r.width-4); S.sidePos.y=clamp(S.sidePos.y,4,innerHeight-r.height-4);
     p.style.left=S.sidePos.x+'px'; p.style.top=S.sidePos.y+'px';
   },
   startDrag(e){
+    if(!this.draggable()) return;
     const p=$('#sidePanel'), r=p.getBoundingClientRect();
     const dx=e.clientX-r.left, dy=e.clientY-r.top;
     this.closePop();
@@ -62,8 +74,7 @@ const Side={
   },
   hide(){ this.open=false; this.closePop(); $('#sidePanel').hidden=true; $$('#sideWrap .side-h').forEach(h=>h.classList.remove('hide')); },
   mainTools(){
-    return [{k:'grip',t:'اسحب لتحريك القائمة',i:'grip',grip:true},null,
-      {k:'files',t:'الملفات',i:'folder'},{k:'bt',t:'البلوتوث',i:'bluetooth'},{k:'board',t:'السبورة',i:'board'},
+    return [{k:'files',t:'الملفات',i:'folder'},{k:'bt',t:'البلوتوث',i:'bluetooth'},{k:'board',t:'السبورة',i:'board'},
       {k:'shot',t:'لقطة شاشة',i:'camera'},{k:'cast',t:'العرض اللاسلكي',i:'cast'},null,
       {k:'annot',t:'الكتابة فوق الشاشة',i:'penScreen'},null,{k:'close',t:'إغلاق القائمة',i:'x'}];
   },
@@ -114,7 +125,7 @@ const Side={
     $$('#sidePop input[type=range]').forEach(r=>setRangeFill(r));
     const r=$('#sidePanel').getBoundingClientRect(), pw=el.offsetWidth, ph=el.offsetHeight;
     let left,top;
-    if(S.sideDir==='h'){ left=clamp(r.left+r.width/2-pw/2,8,innerWidth-pw-8); top=r.top>innerHeight/2?r.top-ph-10:r.bottom+10; }
+    if(this.draggable()&&S.sideDir==='h'){ left=clamp(r.left+r.width/2-pw/2,8,innerWidth-pw-8); top=r.top>innerHeight/2?r.top-ph-10:r.bottom+10; }
     else { left=r.left>innerWidth/2?r.left-pw-10:r.right+10; top=clamp(r.top,8,innerHeight-ph-8); }
     el.style.left=clamp(left,8,Math.max(8,innerWidth-pw-8))+'px'; el.style.top=clamp(top,8,Math.max(8,innerHeight-ph-8))+'px';
   },

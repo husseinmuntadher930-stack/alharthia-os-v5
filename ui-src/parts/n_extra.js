@@ -162,10 +162,10 @@ const Extra={
         ${sw('bigCursor','مؤشر ماوس كبير')}
         ${sw('hideCursor','إخفاء المؤشر','مناسب لشاشات اللمس')}
       </div>
-      <div class="card"><h3>${icon('grip')}القائمة الجانبية</h3>
+      <div class="card"><h3>${icon('grip')}قائمة الكتابة فوق الشاشة</h3>
         ${sel('sideDir','اتجاه القائمة',[['v','عمودية'],['h','أفقية']])}
         <div class="row"><span class="lbl">مكان القائمة<span class="hint">تكدر تسحبها من زر النقاط لأي مكان بالشاشة</span></span><button class="btn sm" data-x="sideReset">${icon('restart')}رجّعها لمكانها</button></div>
-        <p class="hint">السهم الصغير على الجانبين يفتح القائمة بكل الصفحات.</p>
+        <p class="hint">هذي الإعدادات تخص قائمة الرسم بس. القائمة الجانبية السريعة (السهم على الجانبين) ثابتة وعمودية دائماً وما تتحرك.</p>
       </div>
       <div class="card"><h3>${icon('keyboard')}كيبورد الشاشة</h3>
         ${sel('oskMode','متى يطلع الكيبورد',[['auto','تلقائياً عند لمس خانة الكتابة'],['always','دائماً (حتى بالماوس)'],['off','مطفأ']])}
