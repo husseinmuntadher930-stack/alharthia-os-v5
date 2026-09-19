@@ -1402,7 +1402,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='1.8.4';
+const OS_VERSION='1.8.5';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -5125,7 +5125,7 @@ ICONS.qr='<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" widt
 ICONS.apple='<path d="M12 6c0-2 1.5-3.5 3.5-3.6C15.7 4.4 14.2 6 12 6Z"/><path d="M17.5 12.5c0-2 1.3-3 1.4-3.1-.8-1.1-2-1.3-2.5-1.3-1.1-.1-2.1.6-2.7.6-.6 0-1.4-.6-2.4-.6-1.8 0-3.7 1.5-3.7 4.3 0 1.7.6 3.5 1.5 4.7.7 1 1.4 1.8 2.4 1.8s1.3-.6 2.4-.6 1.4.6 2.4.6 1.7-.9 2.4-1.9c.5-.7.8-1.4 1-1.8-1.6-.7-2.2-2.2-2.2-2.7Z"/>';
 
 const Cast={
-  st:null, iv:0, full:false, fullIv:0, qrUrl:'', sig:'', img:null,
+  st:null, iv:0, full:false, fullIv:0, waitIv:0, qrUrl:'', sig:'', img:null,
   async poll(){
     if(!(window.Native&&Native.on)){ this.st={on:false,demo:true}; this.render(); return; }
     try{ this.st=await API.get('/api/share'); }catch(e){ this.st={on:false,err:errMsg(e)}; }
@@ -5252,11 +5252,18 @@ const Cast={
     el.innerHTML=`<div class="cast-wait">${icon('info')} ما وصلت صورة بعد</div>
       <button class="btn ghost" data-cast="exitFull">${icon('x')}خروج</button>`;
     const img=this.imgEl();
-    img.onload=()=>el.querySelector('.cast-wait')?.setAttribute('hidden','');
     el.insertBefore(img,el.firstChild);   // نقل العنصر — البث يظل مفتوح
+    /* الصورة أصلاً شغالة قبل ما نفتح ملء الشاشة، فحدث onload ممكن ما ينطلق مرة ثانية.
+       نتأكد من الصورة نفسها (naturalWidth) بدل ما نستنى الحدث. */
+    const wait=el.querySelector('.cast-wait');
+    const ready=()=>{ if(img.naturalWidth>0){ if(wait) wait.hidden=true; return true; } return false; };
+    img.onload=ready;
+    clearInterval(this.waitIv);
+    if(!ready()) this.waitIv=setInterval(()=>{ if(!this.full||ready()) clearInterval(this.waitIv); },250);
   },
   closeFull(){
     this.full=false;
+    clearInterval(this.waitIv); this.waitIv=0;
     const el=$('#castFull');
     const slot=$('#castSlot');
     if(this.img){ if(slot) slot.insertBefore(this.img,slot.firstChild); else this.img.remove(); }
