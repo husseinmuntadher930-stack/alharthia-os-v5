@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "1.8.1"
+VERSION = "1.8.2"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -711,7 +711,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.serve_static(u.path)
         if not self.token_ok(q):
             return self.fail("unauthorized", 401)
-        name = u.path[5:].replace("/", "_")
+        # الامتداد جزء من اسم الملف بالرابط (مثل /api/share/incoming.jpg) وما يدخل باسم الدالة
+        name = re.sub(r"\.(jpg|jpeg|png|json|txt)$", "", u.path[5:]).replace("/", "_")
         fn = getattr(self, f"api_{name}", None)
         if not fn:
             return self.fail("unknown endpoint", 404)
