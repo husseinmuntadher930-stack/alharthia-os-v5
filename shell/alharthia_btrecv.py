@@ -22,6 +22,28 @@ H_NAME, H_TYPE, H_LENGTH, H_BODY, H_END_BODY = 0x01, 0x42, 0xC3, 0x48, 0x49
 
 
 STATUS_FILE = os.environ.get("ALH_BT_STATUS", "/run/alharthia/bt-transfers.json")
+CANCEL_DIR = os.environ.get("ALH_BT_CANCEL", "/run/alharthia/cancel")
+
+
+def cancel_dir():
+    """مجلد يكتب بيه المستخدم رقم التحويل اللي يريد يوقفه."""
+    try:
+        os.makedirs(CANCEL_DIR, exist_ok=True)
+        os.chmod(CANCEL_DIR, 0o777)
+    except OSError:
+        pass
+    return CANCEL_DIR
+
+
+def cancel_asked(tid):
+    return os.path.exists(os.path.join(CANCEL_DIR, str(tid)))
+
+
+def cancel_clear(tid):
+    try:
+        os.remove(os.path.join(CANCEL_DIR, str(tid)))
+    except OSError:
+        pass
 TRANSFERS = {}
 T_LOCK = threading.Lock()
 T_IDS = itertools.count(1)
@@ -163,6 +185,7 @@ class Session:
                    "got": 0, "state": "receiving", "started": time.time(), "t": time.time(), "path": ""}
         with T_LOCK:
             TRANSFERS[self.tr["id"]] = self.tr
+        cancel_clear(self.tr["id"])
         status_write(True)
         log("receiving", self.name, "from", self.peer, "size", self.size)
 
@@ -196,9 +219,9 @@ class Session:
         self.file = self.tmp = None
         self.name = self.size = None
 
-    def drop_file(self):
+    def drop_file(self, state="failed"):
         if self.file:
-            self.end_transfer("failed")
+            self.end_transfer(state)
             try:
                 self.file.close()
                 os.remove(self.tmp)
@@ -257,6 +280,12 @@ class Session:
             self.file.write(b)
             self.got += len(b)
         self.progress()
+        if self.tr and cancel_asked(self.tr["id"]):
+            log("cancelled by user", self.name)
+            cancel_clear(self.tr["id"])
+            self.drop_file("cancelled")
+            self.send(RSP_FORBIDDEN)
+            return
         if op == OP_PUT_FINAL:
             self.finish_file()
             self.send(RSP_OK)
@@ -334,6 +363,7 @@ def main():
 
     bus.watch_name_owner("org.bluez", owner_changed)
     dest_dir()
+    cancel_dir()
     status_write(True)
     GLib.MainLoop().run()
 

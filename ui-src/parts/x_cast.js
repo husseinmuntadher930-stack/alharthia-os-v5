@@ -36,7 +36,7 @@ const Cast={
   render(force){
     const m=$('#castMain'); if(!m) return;
     const s=this.st||{};
-    const sig=JSON.stringify([s.on,s.url,s.viewers,s.incoming,s.from,s.tool,s.video,s.videoTool,s.videoErr,s.airplay,s.https,s.pin]);
+    const sig=JSON.stringify([s.on,s.url,s.viewers,s.incoming,s.from,s.tool,s.video,s.videoTool,s.videoErr,s.airplay,s.https,s.pin,s.capErr,s.airplayErr]);
     if(!force&&sig===this.sig){ if(s.incoming) this.tickImg($('#castImg')); return; }
     this.sig=sig;
     const on=!!s.on, url=s.url||'', ap=s.airplay||'missing';
@@ -53,7 +53,8 @@ const Cast={
             <div class="btns" style="margin-top:12px"><button class="btn sm" data-cast="copy">${icon('copy')}نسخ العنوان</button>
             <span class="hint">أو اكتب <b dir="ltr">${esc(s.ip||'')}:${s.port||0}</b> بالمتصفح</span></div></div>`
           :`<p class="hint">من تشغّله يطلع لك عنوان ورمز QR تفتحه بالجهاز الثاني (لابتوب، شاشة ذكية، أو هاتف).</p>`}
-        ${s.tool===false?`<p class="hint" style="color:var(--warn)">${icon('info')} أداة التقاط الشاشة (grim) غير مثبتة — نفّذ: sudo apt install grim</p>`:''}
+        ${s.tool===false?`<p class="hint" style="color:var(--warn)">${icon('info')} أداة التقاط الشاشة غير مثبتة — نفّذ: sudo apt install grim</p>`:''}
+        ${on&&s.capErr?`<p class="hint" style="color:var(--danger)">${icon('info')} تعذر التقاط الشاشة: ${esc(s.capErr)}</p>`:''}
         ${on&&s.videoTool===false?`<p class="hint" style="color:var(--warn)">${icon('info')} البث المباشر يحتاج wf-recorder و ffmpeg — نفّذ: sudo apt install wf-recorder ffmpeg (بدونها يشتغل بصور متتابعة)</p>`:''}
         ${on&&s.videoTool&&!s.video&&s.videoErr?`<p class="hint" style="color:var(--warn)">${icon('info')} ${esc(s.videoErr)}</p>`:''}
       </div>
@@ -78,6 +79,8 @@ const Cast={
           <span class="hint">من تشغّله، افتح «مركز التحكم» بالآيفون ← «عكس الشاشة» ← اختر <b dir="ltr">Alharthia</b></span></label>
           <label class="sw"><input type="checkbox" id="castAir" ${ap==='on'?'checked':''} ${ap==='missing'?'disabled':''}><span></span></label></div>
         ${ap==='missing'?`<p class="hint" style="color:var(--warn)">${icon('info')} غير مثبت — نفّذ: sudo apt install uxplay avahi-daemon</p>`:''}
+        ${ap==='off'&&s.airplayErr?`<div class="cast-err">${icon('info')}<div><b>AirPlay انطفأ — هذا السبب:</b><div dir="ltr">${esc(s.airplayErr)}</div>
+            <div class="hint" style="margin-top:8px">أغلب الأحيان حزم GStreamer ناقصة:<br><code dir="ltr">sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-gl gstreamer1.0-wayland</code></div></div></div>`:''}
         ${s.incoming?`<div class="cast-in"><div class="hint">يعرض الآن: <b>${esc(s.from||'جهاز')}</b></div>
             <img id="castImg" alt="">
             <div class="btns" style="margin-top:10px"><button class="btn primary" data-cast="full">${icon('fit')}ملء الشاشة</button></div></div>`
@@ -89,14 +92,18 @@ const Cast={
     if(on&&url) this.drawQR(url);
     if(s.incoming) this.tickImg($('#castImg'));
   },
-  tickImg(img){ if(!img) return; img.src='/api/share/incoming.jpg?t='+Date.now()+'&t2='+API.tok; },
+  imgUrl(){ return '/api/share/incoming.jpg?t='+encodeURIComponent(API.tok||'')+'&ts='+Date.now(); },
+  tickImg(img){ if(!img) return; img.src=this.imgUrl(); },
   openFull(){
     this.full=true;
     const el=$('#castFull'); el.hidden=false;
-    el.innerHTML=`<img alt=""><button class="btn ghost" data-cast="exitFull">${icon('x')}خروج</button>`;
+    el.innerHTML=`<img alt=""><div class="cast-wait">${icon('info')} ما وصلت صورة بعد — تأكد إن الجهاز الثاني ضاغط «شارك شاشتك»</div>
+      <button class="btn ghost" data-cast="exitFull">${icon('x')}خروج</button>`;
     const img=el.querySelector('img');
     clearInterval(this.fullIv);
-    this.fullIv=setInterval(()=>{ img.src='/api/share/incoming.jpg?t='+Date.now(); },300);
+    img.onerror=()=>{ $('#castFull').querySelector('.cast-wait')?.removeAttribute('hidden'); };
+    img.onload=()=>{ $('#castFull').querySelector('.cast-wait')?.setAttribute('hidden',''); };
+    this.fullIv=setInterval(()=>{ img.src=this.imgUrl(); },250);
   },
   closeFull(){ this.full=false; clearInterval(this.fullIv); $('#castFull').hidden=true; },
   init(){

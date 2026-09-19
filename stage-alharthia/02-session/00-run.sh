@@ -52,9 +52,9 @@ User=${U}
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=GST_GL_API=gles2
-ExecStart=/usr/bin/uxplay -n Alharthia -nh -fs -vs waylandsink
-Restart=on-failure
-RestartSec=5
+Environment=ALH_AIRPLAY_NAME=Alharthia
+ExecStart=/usr/lib/alharthia/alharthia-airplay-run
+Restart=no
 
 [Install]
 WantedBy=multi-user.target

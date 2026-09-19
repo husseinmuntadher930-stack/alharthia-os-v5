@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "1.7.2"
+VERSION = "1.7.3"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -942,6 +942,17 @@ class Handler(BaseHTTPRequestHandler):
         return {"ok": True}
 
     def api_bt_transfers(self, m, q):
+        if m == "POST":
+            tid = str(self.jbody().get("cancel", ""))[:20]
+            if not tid.isdigit():
+                raise RuntimeError("رقم تحويل غير صالح")
+            d = "/run/alharthia/cancel"
+            try:
+                os.makedirs(d, exist_ok=True)
+                open(os.path.join(d, tid), "wb").close()
+            except OSError as e:
+                raise RuntimeError("تعذر إيقاف التنزيل: %s" % e)
+            return {"ok": True}
         try:
             with open("/run/alharthia/bt-transfers.json", encoding="utf-8") as f:
                 data = json.load(f)

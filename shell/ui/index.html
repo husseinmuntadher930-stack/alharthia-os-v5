@@ -611,10 +611,17 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .cast-url{margin-top:14px;padding:16px;border-radius:16px;background:var(--surface-2);text-align:center}
 .cast-url b{display:block;font-size:clamp(18px,3vw,28px);margin-top:6px;word-break:break-all;color:var(--head);user-select:text}
 .cast-steps{margin:6px 0 0;padding-inline-start:22px;color:var(--text-2);line-height:2}
+.tb-chip.dl{background:color-mix(in srgb,#2563eb 22%,transparent);color:#93b4fd}
+.tb-chip.dl span{font-variant-numeric:tabular-nums;font-weight:700}
+.tb-chip.dl.done{background:color-mix(in srgb,var(--ok) 22%,transparent);color:var(--ok)}
+.cast-err{display:flex;gap:10px;margin-top:12px;padding:14px;border-radius:14px;background:color-mix(in srgb,var(--danger) 10%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);color:var(--text-2);font-size:14px;line-height:1.8}
+.cast-err b{color:var(--danger);display:block;margin-bottom:4px}
+.cast-err code{display:block;background:var(--surface-2);padding:8px 10px;border-radius:8px;margin-top:6px;font-size:12px;word-break:break-all;user-select:text}
 .cast-pin{margin-top:12px;padding:16px;border-radius:16px;background:var(--surface-2);text-align:center}
 .cast-pin b{display:block;font-size:clamp(30px,5vw,44px);letter-spacing:.22em;margin:10px 0 6px;color:var(--acc);font-weight:800;user-select:text}
 .cast-in{margin-top:14px}
 .cast-in img{width:100%;max-height:46vh;object-fit:contain;background:#000;border-radius:16px}
+.cast-wait{position:fixed;inset:auto 0 auto 0;top:50%;transform:translateY(-50%);text-align:center;color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;gap:10px;opacity:.85;pointer-events:none}
 .cast-qr{display:flex;align-items:center;gap:18px;justify-content:center;flex-wrap:wrap;margin-top:16px}
 .cast-qr canvas{width:190px;height:190px;background:#fff;padding:10px;border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,.18);image-rendering:pixelated}
 .cast-qr .qr-tip{max-width:260px;text-align:start;color:var(--text-2);line-height:1.9;font-size:15px}
@@ -859,6 +866,8 @@ html.nocur,html.nocur *{cursor:none!important}
       <button class="tb-chip" id="tbTimer" hidden data-go="timer"><svg class="i" data-i="timer"></svg><span></span></button>
       <button class="tb-btn" id="tbUsb" data-go="files" data-arg="usb" title="الفلاشة"><svg class="i" data-i="usb"></svg></button>
       <button class="tb-btn" id="tbKbd" title="كيبورد الشاشة (تشغيل / إطفاء)"></button>
+      <button class="tb-chip dl" id="tbDl" hidden title="جاري استلام ملف — اضغط للتفاصيل">
+        <svg class="i" data-i="download"></svg><span></span></button>
       <button class="status-group" data-qp title="الاتصالات">
         <span class="tb-btn st-bt"><svg class="i" data-i="bluetooth"></svg></span>
         <span class="tb-btn st-wifi"><svg class="i wf" viewBox="0 0 24 24"><path class="w3" d="M2 8.5a15 15 0 0 1 20 0"/><path class="w2" d="M5 12a10 10 0 0 1 14 0"/><path class="w1" d="M8.5 15.5a5 5 0 0 1 7 0"/><path class="w0" d="M12 19h.01" stroke-width="3"/><path class="wx" d="M3 3l18 18" style="display:none"/></svg></span>
@@ -1376,7 +1385,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='1.7.2';
+const OS_VERSION='1.7.3';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -5082,7 +5091,7 @@ const Cast={
   render(force){
     const m=$('#castMain'); if(!m) return;
     const s=this.st||{};
-    const sig=JSON.stringify([s.on,s.url,s.viewers,s.incoming,s.from,s.tool,s.video,s.videoTool,s.videoErr,s.airplay,s.https,s.pin]);
+    const sig=JSON.stringify([s.on,s.url,s.viewers,s.incoming,s.from,s.tool,s.video,s.videoTool,s.videoErr,s.airplay,s.https,s.pin,s.capErr,s.airplayErr]);
     if(!force&&sig===this.sig){ if(s.incoming) this.tickImg($('#castImg')); return; }
     this.sig=sig;
     const on=!!s.on, url=s.url||'', ap=s.airplay||'missing';
@@ -5099,7 +5108,8 @@ const Cast={
             <div class="btns" style="margin-top:12px"><button class="btn sm" data-cast="copy">${icon('copy')}نسخ العنوان</button>
             <span class="hint">أو اكتب <b dir="ltr">${esc(s.ip||'')}:${s.port||0}</b> بالمتصفح</span></div></div>`
           :`<p class="hint">من تشغّله يطلع لك عنوان ورمز QR تفتحه بالجهاز الثاني (لابتوب، شاشة ذكية، أو هاتف).</p>`}
-        ${s.tool===false?`<p class="hint" style="color:var(--warn)">${icon('info')} أداة التقاط الشاشة (grim) غير مثبتة — نفّذ: sudo apt install grim</p>`:''}
+        ${s.tool===false?`<p class="hint" style="color:var(--warn)">${icon('info')} أداة التقاط الشاشة غير مثبتة — نفّذ: sudo apt install grim</p>`:''}
+        ${on&&s.capErr?`<p class="hint" style="color:var(--danger)">${icon('info')} تعذر التقاط الشاشة: ${esc(s.capErr)}</p>`:''}
         ${on&&s.videoTool===false?`<p class="hint" style="color:var(--warn)">${icon('info')} البث المباشر يحتاج wf-recorder و ffmpeg — نفّذ: sudo apt install wf-recorder ffmpeg (بدونها يشتغل بصور متتابعة)</p>`:''}
         ${on&&s.videoTool&&!s.video&&s.videoErr?`<p class="hint" style="color:var(--warn)">${icon('info')} ${esc(s.videoErr)}</p>`:''}
       </div>
@@ -5124,6 +5134,8 @@ const Cast={
           <span class="hint">من تشغّله، افتح «مركز التحكم» بالآيفون ← «عكس الشاشة» ← اختر <b dir="ltr">Alharthia</b></span></label>
           <label class="sw"><input type="checkbox" id="castAir" ${ap==='on'?'checked':''} ${ap==='missing'?'disabled':''}><span></span></label></div>
         ${ap==='missing'?`<p class="hint" style="color:var(--warn)">${icon('info')} غير مثبت — نفّذ: sudo apt install uxplay avahi-daemon</p>`:''}
+        ${ap==='off'&&s.airplayErr?`<div class="cast-err">${icon('info')}<div><b>AirPlay انطفأ — هذا السبب:</b><div dir="ltr">${esc(s.airplayErr)}</div>
+            <div class="hint" style="margin-top:8px">أغلب الأحيان حزم GStreamer ناقصة:<br><code dir="ltr">sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-gl gstreamer1.0-wayland</code></div></div></div>`:''}
         ${s.incoming?`<div class="cast-in"><div class="hint">يعرض الآن: <b>${esc(s.from||'جهاز')}</b></div>
             <img id="castImg" alt="">
             <div class="btns" style="margin-top:10px"><button class="btn primary" data-cast="full">${icon('fit')}ملء الشاشة</button></div></div>`
@@ -5135,14 +5147,18 @@ const Cast={
     if(on&&url) this.drawQR(url);
     if(s.incoming) this.tickImg($('#castImg'));
   },
-  tickImg(img){ if(!img) return; img.src='/api/share/incoming.jpg?t='+Date.now()+'&t2='+API.tok; },
+  imgUrl(){ return '/api/share/incoming.jpg?t='+encodeURIComponent(API.tok||'')+'&ts='+Date.now(); },
+  tickImg(img){ if(!img) return; img.src=this.imgUrl(); },
   openFull(){
     this.full=true;
     const el=$('#castFull'); el.hidden=false;
-    el.innerHTML=`<img alt=""><button class="btn ghost" data-cast="exitFull">${icon('x')}خروج</button>`;
+    el.innerHTML=`<img alt=""><div class="cast-wait">${icon('info')} ما وصلت صورة بعد — تأكد إن الجهاز الثاني ضاغط «شارك شاشتك»</div>
+      <button class="btn ghost" data-cast="exitFull">${icon('x')}خروج</button>`;
     const img=el.querySelector('img');
     clearInterval(this.fullIv);
-    this.fullIv=setInterval(()=>{ img.src='/api/share/incoming.jpg?t='+Date.now(); },300);
+    img.onerror=()=>{ $('#castFull').querySelector('.cast-wait')?.removeAttribute('hidden'); };
+    img.onload=()=>{ $('#castFull').querySelector('.cast-wait')?.setAttribute('hidden',''); };
+    this.fullIv=setInterval(()=>{ img.src=this.imgUrl(); },250);
   },
   closeFull(){ this.full=false; clearInterval(this.fullIv); $('#castFull').hidden=true; },
   init(){
@@ -5520,38 +5536,75 @@ window.Native=Native;
 /* ---------------- Bluetooth transfer card (bottom-left, like the phone) ---------------- */
 const BtXfer={
   shown:new Set(), seen:new Map(), active:null, hideT:0, t0:Date.now()/1000,
+  hidden:new Set(), last:null, busy:false,
+
   async poll(){
     if(!(window.Native&&Native.on)) return;
     let r; try{ r=await API.get('/api/bt/transfers'); }catch(e){ return; }
     const items=(r.items||[]).filter(t=>t.started>=this.t0-2);
     const live=items.filter(t=>t.state==='receiving').sort((a,b)=>b.started-a.started);
-    if(live.length){ this.active=live[0].id; this.render(live[0],live.length-1); return; }
+    if(live.length){ this.active=live[0].id; this.last=live[0]; this.render(live[0],live.length-1); return; }
+    this.last=null; this.chip(null);
     for(const t of items){
       const prev=this.seen.get(t.id); if(prev===t.state) continue;
       this.seen.set(t.id,t.state);
-      if(t.state==='done'){ if(t.path) this.shown.add(t.path); this.render(t,0); beep(2,990); }
-      else if(t.state==='failed'&&this.active===t.id) this.render(t,0);
+      if(t.state==='done'){ if(t.path) this.shown.add(t.path); this.hidden.delete(t.id); this.render(t,0); beep(2,990); }
+      else if((t.state==='failed'||t.state==='cancelled')&&this.active===t.id){ this.hidden.delete(t.id); this.render(t,0); }
     }
   },
+
+  /* مؤشر صغير بالشريط العلوي لمن يكون الإشعار مخفي والتنزيل بعده شغال */
+  chip(t){
+    const c=$('#tbDl'); if(!c) return;
+    if(!t||!this.hidden.has(t.id)){ c.hidden=true; return; }
+    const pct=t.size?Math.min(100,Math.round(t.got/t.size*100)):0;
+    c.hidden=false;
+    c.querySelector('span').textContent=t.size?nf(pct)+'٪':fmtSize(t.got);
+    c.onclick=()=>{ this.hidden.delete(t.id); this.chip(null); this.render(t,0); };
+  },
+
+  async cancel(id){
+    if(this.busy) return; this.busy=true;
+    try{ await API.post('/api/bt/transfers',{cancel:id}); toast('جاري إيقاف التنزيل…'); }
+    catch(e){ toast(errMsg(e),false); }
+    this.busy=false;
+  },
+
   render(t,more){
-    const el=$('#btReq'); el.hidden=false; el.classList.add('xfer');
+    const el=$('#btReq');
+    if(this.hidden.has(t.id)&&t.state==='receiving'){ el.hidden=true; this.chip(t); return; }
+    this.chip(null);
+    el.hidden=false; el.classList.add('xfer');
     const pct=t.size?Math.min(100,Math.round(t.got/t.size*100)):0;
     const secs=Math.max(.5,(t.t||Date.now()/1000)-t.started), speed=t.got/secs;
-    const done=t.state==='done', fail=t.state==='failed';
-    const color=done?'var(--ok)':fail?'var(--danger)':'#2563eb';
-    el.innerHTML=`<div class="hd"><span class="ic${!done&&!fail?' pulse':''}" style="background:${color}">${icon(done?'check':fail?'x':'bluetooth')}</span>
-        <div class="grow"><b>${done?'تم استلام الملف':fail?'فشل استلام الملف':'جاري استلام ملف'}</b><div class="hint">${fail?'انقطع الاتصال مع الجهاز':'من: '+esc(t.from||'جهاز بلوتوث')}${more>0?` · و${nf(more)} ملف ثاني`:''}</div></div>
-        <button class="icon-btn sm" data-xf="hide" title="إخفاء">${icon('x')}</button></div>
+    const done=t.state==='done', fail=t.state==='failed', stopped=t.state==='cancelled';
+    const over=done||fail||stopped;
+    const color=done?'var(--ok)':fail?'var(--danger)':stopped?'var(--muted)':'#2563eb';
+    const title=done?'تم استلام الملف':fail?'فشل استلام الملف':stopped?'تم إيقاف التنزيل':'جاري استلام ملف';
+    const sub=fail?'انقطع الاتصال مع الجهاز':stopped?'انحذف الجزء اللي انستلم':'من: '+esc(t.from||'جهاز بلوتوث');
+    el.innerHTML=`<div class="hd"><span class="ic${over?'':' pulse'}" style="background:${color}">${icon(done?'check':fail?'x':stopped?'x':'bluetooth')}</span>
+        <div class="grow"><b>${title}</b><div class="hint">${sub}${more>0?` · و${nf(more)} ملف ثاني`:''}</div></div>
+        ${over?'':`<button class="icon-btn sm" data-xf="hide" title="إخفاء الإشعار">${icon('chevDown')}</button>`}
+        <button class="icon-btn sm" data-xf="close" title="${over?'إغلاق':'إغلاق الإشعار'}">${icon('x')}</button></div>
       <div class="fn">${esc(t.name)}</div>
       ${done?`<div class="hint">${fmtSize(t.got)} · محفوظ في «المستلمة عبر البلوتوث»</div>
         <div class="btns" style="margin-top:14px;justify-content:flex-end"><button class="btn ghost" data-xf="folder">${icon('folder')}فتح المجلد</button><button class="btn primary" data-xf="open">فتح الملف</button></div>`
-      :fail?'':`<div class="meter"><i style="width:${t.size?pct:30}%"></i></div>
-        <div class="xf-row"><span>${t.size?nf(pct)+'٪':''}</span><span>${fmtSize(t.got)}${t.size?' من '+fmtSize(t.size):''}</span><span>${fmtSize(speed)}/ث</span></div>`}`;
-    el.onclick=e=>{ const b=e.target.closest('[data-xf]'); if(!b) return; const a=b.dataset.xf; el.hidden=true;
+      :fail||stopped?'':`<div class="meter"><i style="width:${t.size?pct:30}%"></i></div>
+        <div class="xf-row"><span>${t.size?nf(pct)+'٪':''}</span><span>${fmtSize(t.got)}${t.size?' من '+fmtSize(t.size):''}</span><span>${fmtSize(speed)}/ث</span></div>
+        <div class="btns" style="margin-top:12px;justify-content:flex-end">
+          <button class="btn ghost" data-xf="hide">${icon('chevDown')}إخفاء</button>
+          <button class="btn danger fill" data-xf="stop">${icon('x')}إيقاف التنزيل</button></div>`}`;
+    el.onclick=e=>{
+      const b=e.target.closest('[data-xf]'); if(!b) return;
+      const a=b.dataset.xf;
+      if(a==='hide'){ this.hidden.add(t.id); el.hidden=true; this.chip(t); return; }
+      if(a==='stop'){ this.cancel(t.id); return; }
+      el.hidden=true;
       if(a==='folder'){ go('files'); Files.open('internal','bt'); }
-      if(a==='open'&&t.path) openFile(nodeOf({path:t.path,name:t.path.split('/').pop(),size:t.got,mtime:Date.now()})); };
+      if(a==='open'&&t.path) openFile(nodeOf({path:t.path,name:t.path.split('/').pop(),size:t.got,mtime:Date.now()}));
+    };
     clearTimeout(this.hideT);
-    if(done||fail) this.hideT=setTimeout(()=>{ el.hidden=true; el.classList.remove('xfer'); },done?15000:8000);
+    if(over) this.hideT=setTimeout(()=>{ el.hidden=true; el.classList.remove('xfer'); },done?15000:8000);
   }
 };
 window.BtXfer=BtXfer;

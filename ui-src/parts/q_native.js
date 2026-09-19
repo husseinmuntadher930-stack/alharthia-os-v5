@@ -248,38 +248,75 @@ window.Native=Native;
 /* ---------------- Bluetooth transfer card (bottom-left, like the phone) ---------------- */
 const BtXfer={
   shown:new Set(), seen:new Map(), active:null, hideT:0, t0:Date.now()/1000,
+  hidden:new Set(), last:null, busy:false,
+
   async poll(){
     if(!(window.Native&&Native.on)) return;
     let r; try{ r=await API.get('/api/bt/transfers'); }catch(e){ return; }
     const items=(r.items||[]).filter(t=>t.started>=this.t0-2);
     const live=items.filter(t=>t.state==='receiving').sort((a,b)=>b.started-a.started);
-    if(live.length){ this.active=live[0].id; this.render(live[0],live.length-1); return; }
+    if(live.length){ this.active=live[0].id; this.last=live[0]; this.render(live[0],live.length-1); return; }
+    this.last=null; this.chip(null);
     for(const t of items){
       const prev=this.seen.get(t.id); if(prev===t.state) continue;
       this.seen.set(t.id,t.state);
-      if(t.state==='done'){ if(t.path) this.shown.add(t.path); this.render(t,0); beep(2,990); }
-      else if(t.state==='failed'&&this.active===t.id) this.render(t,0);
+      if(t.state==='done'){ if(t.path) this.shown.add(t.path); this.hidden.delete(t.id); this.render(t,0); beep(2,990); }
+      else if((t.state==='failed'||t.state==='cancelled')&&this.active===t.id){ this.hidden.delete(t.id); this.render(t,0); }
     }
   },
+
+  /* مؤشر صغير بالشريط العلوي لمن يكون الإشعار مخفي والتنزيل بعده شغال */
+  chip(t){
+    const c=$('#tbDl'); if(!c) return;
+    if(!t||!this.hidden.has(t.id)){ c.hidden=true; return; }
+    const pct=t.size?Math.min(100,Math.round(t.got/t.size*100)):0;
+    c.hidden=false;
+    c.querySelector('span').textContent=t.size?nf(pct)+'٪':fmtSize(t.got);
+    c.onclick=()=>{ this.hidden.delete(t.id); this.chip(null); this.render(t,0); };
+  },
+
+  async cancel(id){
+    if(this.busy) return; this.busy=true;
+    try{ await API.post('/api/bt/transfers',{cancel:id}); toast('جاري إيقاف التنزيل…'); }
+    catch(e){ toast(errMsg(e),false); }
+    this.busy=false;
+  },
+
   render(t,more){
-    const el=$('#btReq'); el.hidden=false; el.classList.add('xfer');
+    const el=$('#btReq');
+    if(this.hidden.has(t.id)&&t.state==='receiving'){ el.hidden=true; this.chip(t); return; }
+    this.chip(null);
+    el.hidden=false; el.classList.add('xfer');
     const pct=t.size?Math.min(100,Math.round(t.got/t.size*100)):0;
     const secs=Math.max(.5,(t.t||Date.now()/1000)-t.started), speed=t.got/secs;
-    const done=t.state==='done', fail=t.state==='failed';
-    const color=done?'var(--ok)':fail?'var(--danger)':'#2563eb';
-    el.innerHTML=`<div class="hd"><span class="ic${!done&&!fail?' pulse':''}" style="background:${color}">${icon(done?'check':fail?'x':'bluetooth')}</span>
-        <div class="grow"><b>${done?'تم استلام الملف':fail?'فشل استلام الملف':'جاري استلام ملف'}</b><div class="hint">${fail?'انقطع الاتصال مع الجهاز':'من: '+esc(t.from||'جهاز بلوتوث')}${more>0?` · و${nf(more)} ملف ثاني`:''}</div></div>
-        <button class="icon-btn sm" data-xf="hide" title="إخفاء">${icon('x')}</button></div>
+    const done=t.state==='done', fail=t.state==='failed', stopped=t.state==='cancelled';
+    const over=done||fail||stopped;
+    const color=done?'var(--ok)':fail?'var(--danger)':stopped?'var(--muted)':'#2563eb';
+    const title=done?'تم استلام الملف':fail?'فشل استلام الملف':stopped?'تم إيقاف التنزيل':'جاري استلام ملف';
+    const sub=fail?'انقطع الاتصال مع الجهاز':stopped?'انحذف الجزء اللي انستلم':'من: '+esc(t.from||'جهاز بلوتوث');
+    el.innerHTML=`<div class="hd"><span class="ic${over?'':' pulse'}" style="background:${color}">${icon(done?'check':fail?'x':stopped?'x':'bluetooth')}</span>
+        <div class="grow"><b>${title}</b><div class="hint">${sub}${more>0?` · و${nf(more)} ملف ثاني`:''}</div></div>
+        ${over?'':`<button class="icon-btn sm" data-xf="hide" title="إخفاء الإشعار">${icon('chevDown')}</button>`}
+        <button class="icon-btn sm" data-xf="close" title="${over?'إغلاق':'إغلاق الإشعار'}">${icon('x')}</button></div>
       <div class="fn">${esc(t.name)}</div>
       ${done?`<div class="hint">${fmtSize(t.got)} · محفوظ في «المستلمة عبر البلوتوث»</div>
         <div class="btns" style="margin-top:14px;justify-content:flex-end"><button class="btn ghost" data-xf="folder">${icon('folder')}فتح المجلد</button><button class="btn primary" data-xf="open">فتح الملف</button></div>`
-      :fail?'':`<div class="meter"><i style="width:${t.size?pct:30}%"></i></div>
-        <div class="xf-row"><span>${t.size?nf(pct)+'٪':''}</span><span>${fmtSize(t.got)}${t.size?' من '+fmtSize(t.size):''}</span><span>${fmtSize(speed)}/ث</span></div>`}`;
-    el.onclick=e=>{ const b=e.target.closest('[data-xf]'); if(!b) return; const a=b.dataset.xf; el.hidden=true;
+      :fail||stopped?'':`<div class="meter"><i style="width:${t.size?pct:30}%"></i></div>
+        <div class="xf-row"><span>${t.size?nf(pct)+'٪':''}</span><span>${fmtSize(t.got)}${t.size?' من '+fmtSize(t.size):''}</span><span>${fmtSize(speed)}/ث</span></div>
+        <div class="btns" style="margin-top:12px;justify-content:flex-end">
+          <button class="btn ghost" data-xf="hide">${icon('chevDown')}إخفاء</button>
+          <button class="btn danger fill" data-xf="stop">${icon('x')}إيقاف التنزيل</button></div>`}`;
+    el.onclick=e=>{
+      const b=e.target.closest('[data-xf]'); if(!b) return;
+      const a=b.dataset.xf;
+      if(a==='hide'){ this.hidden.add(t.id); el.hidden=true; this.chip(t); return; }
+      if(a==='stop'){ this.cancel(t.id); return; }
+      el.hidden=true;
       if(a==='folder'){ go('files'); Files.open('internal','bt'); }
-      if(a==='open'&&t.path) openFile(nodeOf({path:t.path,name:t.path.split('/').pop(),size:t.got,mtime:Date.now()})); };
+      if(a==='open'&&t.path) openFile(nodeOf({path:t.path,name:t.path.split('/').pop(),size:t.got,mtime:Date.now()}));
+    };
     clearTimeout(this.hideT);
-    if(done||fail) this.hideT=setTimeout(()=>{ el.hidden=true; el.classList.remove('xfer'); },done?15000:8000);
+    if(over) this.hideT=setTimeout(()=>{ el.hidden=true; el.classList.remove('xfer'); },done?15000:8000);
   }
 };
 window.BtXfer=BtXfer;

@@ -417,22 +417,51 @@ def lan_ip():
         return "127.0.0.1"
 
 
+CAP = {"err": "", "tool": ""}
+
+
+def _cap_cmds(q, scale):
+    """أدوات التقاط الشاشة — بترتيب الأفضلية."""
+    out = []
+    if shutil.which("grim"):
+        out.append(("grim", ["grim", "-t", "jpeg", "-q", str(q), "-s", str(scale), "-"]))
+    if shutil.which("wayshot"):
+        out.append(("wayshot", ["wayshot", "--stdout", "--encoding", "jpg"]))
+    if shutil.which("scrot"):
+        out.append(("scrot", ["scrot", "-o", "-q", str(q), "/dev/stdout"]))
+    return out
+
+
 def capture():
     """A JPEG of the current screen (cached for a moment)."""
     now = time.time()
     with STATE["lock"]:
         if STATE["frame"] and (now - STATE["frame_t"]) * 1000 < FRAME_MIN_MS:
             return STATE["frame"]
-    try:
-        p = subprocess.run(["grim", "-t", "jpeg", "-q", str(STATE["quality"]),
-                            "-s", str(STATE["scale"]), "-"], capture_output=True, timeout=8)
-        data = p.stdout if p.returncode == 0 else b""
-    except Exception:  # noqa
-        data = b""
+    cmds = _cap_cmds(STATE["quality"], STATE["scale"])
+    if not cmds:
+        CAP["err"] = "ماكو أداة التقاط شاشة — ثبّت grim"
+        return b""
+    data, err = b"", ""
+    # نبدي بالأداة اللي نجحت آخر مرة
+    cmds.sort(key=lambda c: c[0] != CAP["tool"])
+    for name, cmd in cmds:
+        try:
+            p = subprocess.run(cmd, capture_output=True, timeout=8,
+                               env=dict(os.environ, XDG_RUNTIME_DIR=os.environ.get("XDG_RUNTIME_DIR", "")))
+        except Exception as e:  # noqa
+            err = "%s: %s" % (name, e)
+            continue
+        if p.returncode == 0 and p.stdout:
+            data, CAP["tool"], CAP["err"] = p.stdout, name, ""
+            break
+        err = "%s: %s" % (name, (p.stderr or b"").decode("utf-8", "replace").strip()[:160] or "رجع فارغ")
+    if not data:
+        CAP["err"] = err or "تعذر التقاط الشاشة"
     with STATE["lock"]:
         if data:
             STATE["frame"], STATE["frame_t"] = data, now
-        return STATE["frame"]
+        return STATE["frame"] if data else b""
 
 
 def status():
@@ -444,12 +473,12 @@ def status():
         "url": f"http://{lan_ip()}:{PORT}/?k={STATE['key']}" if STATE["on"] else "",
         "ip": lan_ip(), "port": PORT, "viewers": len(viewers),
         "incoming": bool(STATE["in_frame"]) and now - STATE["in_t"] < IN_TIMEOUT,
-        "from": STATE["in_name"], "tool": bool(_has_grim()),
+        "from": STATE["in_name"], "tool": bool(_cap_cmds(50, 1)), "capTool": CAP["tool"], "capErr": CAP["err"],
         "video": VIDEO["on"], "videoTool": video_tools(), "videoErr": VIDEO["err"],
         "https": bool(TLS["srv"]), "httpsPort": HTTPS_PORT,
         "pull": PULL["on"], "pullUrl": PULL["url"], "pullErr": PULL["err"],
         "sendUrl": f"https://{lan_ip()}:{HTTPS_PORT}/send?k={STATE['key']}" if (STATE["on"] and TLS["srv"]) else "",
-        "airplay": airplay_status(),
+        "airplay": airplay_status(), "airplayErr": AIR["err"],
     }
 
 
@@ -488,29 +517,60 @@ PAGE_VIEW = """<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>شاشة Alharthia</title>
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
-video,img{width:100%;height:100%;object-fit:contain;display:block;background:#000}
-#msg{position:fixed;inset:auto 0 12px;text-align:center;color:#fff;font:14px system-ui;opacity:.75}
-#way{position:fixed;top:10px;left:10px;color:#fff;font:11px system-ui;opacity:.35}</style>
+video,img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#msg{position:fixed;inset:auto 0 14px;text-align:center;color:#fff;font:15px system-ui;opacity:.85;
+ text-shadow:0 1px 4px #000;padding:0 16px;line-height:1.7}
+#tag{position:fixed;top:10px;left:10px;color:#fff;font:11px system-ui;opacity:.3}</style>
 </head><body>
-<video id="vid" autoplay muted playsinline webkit-playsinline></video>
-<img id="pic" alt="" hidden>
-<div id="msg">جاري الاتصال…</div><div id="way"></div>
+<img id="pic" alt="">
+<video id="vid" autoplay muted playsinline webkit-playsinline hidden></video>
+<div id="msg">جاري الاتصال…</div><div id="tag"></div>
 <script>
+/* الفكرة: نبدي فوراً بالصور المتتابعة حتى ما تطلع شاشة سودة أبداً،
+   وبالخلفية نجرب البث المباشر، وما ننتقل إلا لمن تجي صورة حقيقية منه. */
 const k=new URLSearchParams(location.search).get('k')||'';
 const vid=document.getElementById('vid'), pic=document.getElementById('pic');
-const msg=document.getElementById('msg'), way=document.getElementById('way');
+const msg=document.getElementById('msg'), tag=document.getElementById('tag');
 const MIMES=['video/mp4; codecs="avc1.42E01E"','video/mp4; codecs="avc1.42001E"','video/mp4; codecs="avc1.4D401F"','video/mp4; codecs="avc1.640028"','video/mp4'];
-let live=0, mode='', stopAll=null;
-function note(t){ msg.textContent=t; msg.style.display=t?'':'none'; }
-function alive(){ live=Date.now(); note(''); way.textContent=mode; }
+const APPLE=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const FORCE=new URLSearchParams(location.search).get('mode')||'';
+let mode='', jpegIv=0, stopVideo=null, lastPic=0, lastVid=0, fails=0;
 
-/* ---------- 1) MSE: أقل تأخير (أندرويد / كروم / ويندوز) ---------- */
-async function useMSE(){
+function note(t){ msg.textContent=t||''; msg.style.display=t?'':'none'; }
+function showPic(){ pic.hidden=false; vid.hidden=true; tag.textContent='صور'; mode='jpg'; }
+function showVid(m){ pic.hidden=true; vid.hidden=false; tag.textContent=m; mode=m; note(''); }
+
+/* ---------- صور متتابعة: تشتغل دائماً وبأي متصفح ---------- */
+function startJpeg(){
+  if(jpegIv) return;
+  showPic();
+  let busy=false;
+  jpegIv=setInterval(async()=>{
+    if(busy||mode!=='jpg') return; busy=true;
+    try{
+      const r=await fetch('/frame.jpg?k='+k+'&ts='+Date.now(),{cache:'no-store'});
+      if(!r.ok) throw new Error(r.status===503?'الجهاز ما يكدر يلتقط الشاشة':'خطأ '+r.status);
+      const blob=await r.blob();
+      if(!blob.size) throw new Error('صورة فارغة');
+      const u=URL.createObjectURL(blob), old=pic.src;
+      pic.src=u; setTimeout(()=>old&&old.startsWith('blob:')&&URL.revokeObjectURL(old),400);
+      lastPic=Date.now(); fails=0; note('');
+    }catch(e){
+      if(++fails>2) note(String(e.message||e)+' — جاري إعادة المحاولة…');
+    }
+    busy=false;
+  },250);
+}
+function stopJpeg(){ clearInterval(jpegIv); jpegIv=0; }
+
+/* ---------- MSE: أقل تأخير (أندرويد / كروم / ويندوز) ---------- */
+async function tryMSE(){
   const MS=window.MediaSource||window.ManagedMediaSource;
   if(!MS||!MS.isTypeSupported) return false;
   const MIME=MIMES.find(m=>{ try{ return MS.isTypeSupported(m); }catch(e){ return false; } });
   if(!MIME) return false;
-  mode='mse'; pic.hidden=true; vid.hidden=false;
+  let res; try{ res=await fetch('/live.mp4?k='+k,{cache:'no-store'}); }catch(e){ return false; }
+  if(!res.ok||!res.body) return false;
   const ms=new MS(); vid.disableRemotePlayback=true; vid.src=URL.createObjectURL(ms);
   await new Promise(r=>ms.addEventListener('sourceopen',r,{once:true}));
   let sb; try{ sb=ms.addSourceBuffer(MIME); }catch(e){ return false; }
@@ -521,57 +581,43 @@ async function useMSE(){
   sb.addEventListener('updateend',()=>{ busy=false;
     try{ if(vid.buffered.length&&vid.currentTime-vid.buffered.start(0)>6) sb.remove(0,vid.currentTime-3); }catch(e){}
     pump(); });
-  let res; try{ res=await fetch('/live.mp4?k='+k,{cache:'no-store'}); }catch(e){ return false; }
-  if(!res.ok||!res.body) return false;
-  const rd=res.body.getReader(); stopAll=()=>{ try{ rd.cancel(); }catch(e){} };
+  const rd=res.body.getReader();
+  stopVideo=()=>{ try{ rd.cancel(); }catch(e){} };
   (async()=>{ for(;;){ let r; try{ r=await rd.read(); }catch(e){ break; }
-      if(r.done) break; q.push(r.value); pump(); alive();
+      if(r.done) break;
+      q.push(r.value); pump();
       if(vid.paused) vid.play().catch(()=>{});
+      if(vid.videoWidth>0&&vid.currentTime>0){ lastVid=Date.now(); if(mode!=='mse'){ showVid('mse'); stopJpeg(); } }
       try{ const n=vid.buffered.length; if(n&&vid.buffered.end(n-1)-vid.currentTime>1.6) vid.currentTime=vid.buffered.end(n-1)-0.4; }catch(e){}
-    } live=0; })();
+    }
+    if(mode==='mse'){ startJpeg(); }          // انقطع البث — نرجع للصور
+  })();
   return true;
 }
 
-/* ---------- 2) HLS: آيفون وآيباد (Safari يشغّله مباشرة) ---------- */
-function useHLS(){
+/* ---------- HLS: آيفون وآيباد ---------- */
+function tryHLS(){
   if(!vid.canPlayType('application/vnd.apple.mpegurl')) return false;
-  mode='hls'; pic.hidden=true; vid.hidden=false; stopAll=null;
   vid.src='/hls/live.m3u8?k='+k;
-  vid.addEventListener('timeupdate',alive);
+  vid.addEventListener('timeupdate',()=>{
+    if(vid.videoWidth>0){ lastVid=Date.now(); if(mode!=='hls'){ showVid('hls'); stopJpeg(); } }
+  });
   vid.play().catch(()=>{});
+  stopVideo=()=>{ vid.removeAttribute('src'); vid.load(); };
   return true;
 }
 
-/* ---------- 3) صور متتابعة: يشتغل بأي متصفح ---------- */
-function useJPEG(){
-  mode='jpg'; vid.hidden=true; vid.removeAttribute('src'); pic.hidden=false;
-  let busy=false;
-  const iv=setInterval(async()=>{
-    if(busy) return; busy=true;
-    try{ const r=await fetch('/frame.jpg?k='+k+'&t='+Date.now(),{cache:'no-store'});
-      if(!r.ok) throw 0;
-      const u=URL.createObjectURL(await r.blob()), old=pic.src;
-      pic.src=u; setTimeout(()=>old&&URL.revokeObjectURL(old),300); alive();
-    }catch(e){ note('انقطع الاتصال — جاري المحاولة'); }
-    busy=false;
-  },250);
-  stopAll=()=>clearInterval(iv);
-  return true;
-}
+startJpeg();
+if(FORCE!=='jpg') setTimeout(()=>{ (APPLE?tryHLS():tryMSE())||((APPLE?tryMSE():tryHLS())); },1200);
 
-const CHAIN=[useMSE,useHLS,useJPEG];
-const APPLE=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-if(APPLE) CHAIN.unshift(CHAIN.splice(1,1)[0]);
-let step=0;
-async function next(){
-  if(stopAll){ try{ stopAll(); }catch(e){} stopAll=null; }
-  while(step<CHAIN.length){ const f=CHAIN[step++];
-    try{ if(await f()){ live=Date.now(); return; } }catch(e){}
+/* لو البث وقف، نرجع للصور بدل الشاشة السودة */
+setInterval(()=>{
+  if(mode!=='jpg'&&Date.now()-lastVid>6000){
+    if(stopVideo){ try{ stopVideo(); }catch(e){} stopVideo=null; }
+    startJpeg();
   }
-  step=CHAIN.length-1; useJPEG();
-}
-next();
-setInterval(()=>{ if(live&&Date.now()-live>7000){ note('جاري تبديل طريقة العرض…'); live=0; next(); } },2000);
+},2000);
+
 addEventListener('click',()=>{ vid.play().catch(()=>{});
   const el=document.documentElement; if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
   else if(vid.webkitEnterFullscreen) vid.webkitEnterFullscreen(); });
@@ -726,7 +772,7 @@ class ShareHandler(BaseHTTPRequestHandler):
             return self.deny(503, "البث المباشر غير متاح — " + (VIDEO["err"] or "تحقق من الأدوات"))
         STATE["viewers"][self.client_address[0]] = time.time()
         init, waited = VIDEO["init"], 0.0
-        while not init and waited < 12:
+        while not init and waited < 6:
             time.sleep(0.2)
             waited += 0.2
             init = VIDEO["init"]
@@ -761,7 +807,7 @@ class ShareHandler(BaseHTTPRequestHandler):
         if "/" in name or "\\" in name or name.startswith("."):
             return self.deny(404, "غير موجود")
         full = os.path.join(HLS_DIR, name)
-        for _ in range(60):
+        for _ in range(30):
             if os.path.exists(full):
                 break
             time.sleep(0.2)
@@ -810,20 +856,49 @@ class ShareHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+AIR = {"err": "", "asked": 0.0}
+
+
+def airplay_log(lines=25):
+    """آخر سطور سجل خدمة AirPlay — نبيّنها بالواجهة حتى يعرف المعلم سبب الفشل."""
+    try:
+        out = subprocess.run(["journalctl", "-u", "alharthia-airplay", "-n", str(lines),
+                              "--no-pager", "-o", "cat"], capture_output=True, text=True, timeout=6).stdout
+    except Exception:  # noqa
+        return ""
+    keep = []
+    for ln in out.splitlines():
+        ln = ln.strip()
+        if not ln or ln.startswith(("»", "XDG_RUNTIME_DIR=")):
+            continue
+        keep.append(ln)
+    return " · ".join(keep[-3:])[:300]
+
+
 def airplay_status():
     """uxplay makes the Pi show up in the iPhone/iPad screen-mirroring list."""
     if not shutil.which("uxplay"):
+        AIR["err"] = ""
         return "missing"
     try:
-        out = subprocess.run(["systemctl", "is-active", "alharthia-airplay"], capture_output=True, text=True, timeout=4).stdout.strip()
+        out = subprocess.run(["systemctl", "is-active", "alharthia-airplay"],
+                             capture_output=True, text=True, timeout=4).stdout.strip()
     except Exception:  # noqa
         return "unknown"
-    return "on" if out == "active" else "off"
+    if out == "active":
+        AIR["err"] = ""
+        return "on"
+    # انطفأ بعد ما طلبناه؟ نجيب السبب من السجل
+    if AIR["asked"] and time.time() - AIR["asked"] < 120:
+        AIR["err"] = airplay_log()
+    return "off"
 
 
 def airplay(on):
     if not shutil.which("uxplay"):
         return "missing"
+    AIR["asked"] = time.time() if on else 0.0
+    AIR["err"] = ""
     cmd = ["systemctl", "start" if on else "stop", "alharthia-airplay"]
     subprocess.run(["sudo", "-n", "/usr/lib/alharthia/alharthia-helper", "airplay", "on" if on else "off"],
                    capture_output=True, timeout=15) if shutil.which("sudo") else subprocess.run(cmd, capture_output=True, timeout=15)

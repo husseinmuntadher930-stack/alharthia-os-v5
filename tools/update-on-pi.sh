@@ -8,9 +8,10 @@ H="$(getent passwd "$U" | cut -d: -f6)"
 
 echo "» تنزيل البرامج الجديدة (الكيبورد، مشغل الوسائط، أجهزة الصوت)…"
 apt-get update || true
-for p in python3-dbus dbus-user-session grim wtype mpv pulseaudio-utils python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 \
+for p in git ca-certificates unzip python3-dbus dbus-user-session grim wtype mpv pulseaudio-utils python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 \
 	gir1.2-webkit2-4.1 gir1.2-atspi-2.0 at-spi2-core lswt wlrctl fonts-noto-color-emoji \
-	ffmpeg wf-recorder uxplay avahi-daemon; do
+	ffmpeg wf-recorder uxplay avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+	gstreamer1.0-plugins-bad gstreamer1.0-gl gstreamer1.0-wayland gstreamer1.0-libav; do
 	apt-get install -y --no-install-recommends "$p" || echo "تحذير: ما نزل $p"
 done
 
@@ -20,6 +21,7 @@ cp -a "$ROOT/shell/." /opt/alharthia/
 rm -f /opt/alharthia/alharthia_kbd_button.py
 chmod 755 /opt/alharthia/*.py
 install -m 755 "$ROOT/shell/helper/alharthia-helper" /usr/lib/alharthia/alharthia-helper
+install -m 755 "$ROOT/shell/helper/alharthia-airplay-run" /usr/lib/alharthia/alharthia-airplay-run
 install -m 755 "$ROOT/stage-alharthia/01-shell/files/alharthia-session" /usr/bin/alharthia-session
 install -m 755 "$ROOT/stage-alharthia/01-shell/files/alharthia-keyboard-setup" /usr/bin/alharthia-keyboard-setup
 install -m 644 -o "$U" -g "$U" "$ROOT/stage-alharthia/02-session/files/rc.xml" "$H/.config/labwc/rc.xml"
@@ -38,9 +40,9 @@ User=${U}
 Environment=XDG_RUNTIME_DIR=/run/user/$(id -u "$U")
 Environment=WAYLAND_DISPLAY=wayland-0
 Environment=GST_GL_API=gles2
-ExecStart=/usr/bin/uxplay -n Alharthia -nh -fs -vs waylandsink
-Restart=on-failure
-RestartSec=5
+Environment=ALH_AIRPLAY_NAME=Alharthia
+ExecStart=/usr/lib/alharthia/alharthia-airplay-run
+Restart=no
 
 [Install]
 WantedBy=multi-user.target
