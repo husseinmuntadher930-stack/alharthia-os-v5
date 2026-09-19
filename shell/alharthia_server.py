@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "1.7.3"
+VERSION = "1.7.5"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -1145,9 +1145,12 @@ class Handler(BaseHTTPRequestHandler):
         if not tool:
             raise RuntimeError("أداة اللقطات غير مثبتة — ثبّت grim")
         args = {"grim": [tool, path], "wayshot": [tool, "-f", path], "scrot": [tool, path]}[tool]
-        code, out, err = run(args, timeout=20)
-        if code != 0 or not os.path.exists(path):
-            raise RuntimeError((err or out).strip()[:200] or "تعذر التقاط الشاشة")
+        import alharthia_share as _sh
+        env = _sh.wl_env()
+        pr = subprocess.run(args, capture_output=True, timeout=20, env=env)
+        if pr.returncode != 0 or not os.path.exists(path):
+            msg = (pr.stderr or pr.stdout or b"").decode("utf-8", "replace").strip()[:200]
+            raise RuntimeError("%s (%s)" % (msg or "تعذر التقاط الشاشة", _sh.CAP.get("env", "")))
         return {"ok": True, "path": path, "name": name}
 
     def api_time_tz(self, m, q):

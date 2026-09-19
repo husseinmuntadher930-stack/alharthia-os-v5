@@ -417,47 +417,115 @@ def lan_ip():
         return "127.0.0.1"
 
 
-CAP = {"err": "", "tool": ""}
+CAP = {"err": "", "tool": "", "env": "", "conv": ""}
+PNG_MAGIC = b"\x89PNG"
+
+
+def wl_env():
+    """بيئة Wayland — نلگي اسم جلسة العرض لوحدنا إذا ما كانت موجودة بالبيئة."""
+    env = dict(os.environ)
+    rt = env.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid()
+    env["XDG_RUNTIME_DIR"] = rt
+    if not env.get("WAYLAND_DISPLAY"):
+        try:
+            for f in sorted(os.listdir(rt)):
+                if f.startswith("wayland-") and not f.endswith(".lock"):
+                    env["WAYLAND_DISPLAY"] = f
+                    break
+        except OSError:
+            pass
+    CAP["env"] = "WAYLAND_DISPLAY=%s XDG_RUNTIME_DIR=%s" % (env.get("WAYLAND_DISPLAY", "-"), rt)
+    return env
 
 
 def _cap_cmds(q, scale):
-    """أدوات التقاط الشاشة — بترتيب الأفضلية."""
+    """أدوات التقاط الشاشة. ملاحظة مهمة: نسخة grim بـ Debian 13 مبنية بدون JPEG،
+    فنلتقط PNG ونحوّله بأنفسنا — أسرع وأخف من إرسال PNG كامل."""
     out = []
     if shutil.which("grim"):
-        out.append(("grim", ["grim", "-t", "jpeg", "-q", str(q), "-s", str(scale), "-"]))
+        out.append(("grim-jpeg", ["grim", "-t", "jpeg", "-q", str(q), "-s", str(scale), "-"]))
+        out.append(("grim-png", ["grim", "-s", str(scale), "-"]))
+        out.append(("grim-png-1x", ["grim", "-"]))
     if shutil.which("wayshot"):
         out.append(("wayshot", ["wayshot", "--stdout", "--encoding", "jpg"]))
+        out.append(("wayshot-png", ["wayshot", "--stdout"]))
     if shutil.which("scrot"):
         out.append(("scrot", ["scrot", "-o", "-q", str(q), "/dev/stdout"]))
     return out
 
 
+def _to_jpeg(png, q, height):
+    """يحوّل PNG لـ JPEG. نجرب ffmpeg ثم Pillow ثم ImageMagick، وإذا ماكو نرجع PNG مثل ما هو."""
+    if shutil.which("ffmpeg"):
+        try:
+            p = subprocess.run(
+                ["ffmpeg", "-v", "error", "-f", "png_pipe", "-i", "pipe:0",
+                 "-vf", "scale=-2:%d" % height, "-q:v", str(max(2, min(31, int(31 - q * 0.28)))),
+                 "-f", "mjpeg", "pipe:1"],
+                input=png, capture_output=True, timeout=8)
+            if p.returncode == 0 and p.stdout:
+                CAP["conv"] = "ffmpeg"
+                return p.stdout
+        except Exception:  # noqa
+            pass
+    try:
+        from PIL import Image
+        import io as _io
+        im = Image.open(_io.BytesIO(png)).convert("RGB")
+        if im.height > height:
+            im = im.resize((max(2, im.width * height // im.height), height), Image.BILINEAR)
+        buf = _io.BytesIO()
+        im.save(buf, "JPEG", quality=q)
+        CAP["conv"] = "pillow"
+        return buf.getvalue()
+    except Exception:  # noqa
+        pass
+    for m in ("magick", "convert"):
+        if shutil.which(m):
+            try:
+                cmd = ([m] if m == "convert" else [m]) + ["png:-", "-resize", "x%d" % height,
+                                                         "-quality", str(q), "jpg:-"]
+                p = subprocess.run(cmd, input=png, capture_output=True, timeout=8)
+                if p.returncode == 0 and p.stdout:
+                    CAP["conv"] = m
+                    return p.stdout
+            except Exception:  # noqa
+                pass
+    CAP["conv"] = "png"          # ماكو محوّل — نرسل PNG (أثقل بس يشتغل)
+    return png
+
+
 def capture():
-    """A JPEG of the current screen (cached for a moment)."""
+    """صورة الشاشة الحالية (محفوظة للحظة)."""
     now = time.time()
     with STATE["lock"]:
         if STATE["frame"] and (now - STATE["frame_t"]) * 1000 < FRAME_MIN_MS:
             return STATE["frame"]
     cmds = _cap_cmds(STATE["quality"], STATE["scale"])
     if not cmds:
-        CAP["err"] = "ماكو أداة التقاط شاشة — ثبّت grim"
+        CAP["err"] = "ماكو أداة التقاط شاشة — نفّذ: sudo apt install grim"
+        return b""
+    env = wl_env()
+    if not env.get("WAYLAND_DISPLAY"):
+        CAP["err"] = "ما لگيت جلسة العرض (WAYLAND_DISPLAY) — لازم الخدمة تشتغل داخل جلسة الواجهة"
         return b""
     data, err = b"", ""
-    # نبدي بالأداة اللي نجحت آخر مرة
-    cmds.sort(key=lambda c: c[0] != CAP["tool"])
+    cmds.sort(key=lambda c: c[0] != CAP["tool"])        # نبدي باللي نجح آخر مرة
     for name, cmd in cmds:
         try:
-            p = subprocess.run(cmd, capture_output=True, timeout=8,
-                               env=dict(os.environ, XDG_RUNTIME_DIR=os.environ.get("XDG_RUNTIME_DIR", "")))
+            p = subprocess.run(cmd, capture_output=True, timeout=10, env=env)
         except Exception as e:  # noqa
             err = "%s: %s" % (name, e)
             continue
         if p.returncode == 0 and p.stdout:
             data, CAP["tool"], CAP["err"] = p.stdout, name, ""
             break
-        err = "%s: %s" % (name, (p.stderr or b"").decode("utf-8", "replace").strip()[:160] or "رجع فارغ")
+        msg = (p.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+        err = "%s: %s" % (name, (msg[-1][:150] if msg else "رجع فارغ"))
+    if data and data.startswith(PNG_MAGIC):
+        data = _to_jpeg(data, STATE["quality"], VIDEO["height"])
     if not data:
-        CAP["err"] = err or "تعذر التقاط الشاشة"
+        CAP["err"] = "%s  (%s)" % (err or "تعذر التقاط الشاشة", CAP["env"])
     with STATE["lock"]:
         if data:
             STATE["frame"], STATE["frame_t"] = data, now
@@ -473,7 +541,7 @@ def status():
         "url": f"http://{lan_ip()}:{PORT}/?k={STATE['key']}" if STATE["on"] else "",
         "ip": lan_ip(), "port": PORT, "viewers": len(viewers),
         "incoming": bool(STATE["in_frame"]) and now - STATE["in_t"] < IN_TIMEOUT,
-        "from": STATE["in_name"], "tool": bool(_cap_cmds(50, 1)), "capTool": CAP["tool"], "capErr": CAP["err"],
+        "from": STATE["in_name"], "tool": bool(_cap_cmds(50, 1)), "capTool": CAP["tool"], "capErr": CAP["err"], "capConv": CAP["conv"],
         "video": VIDEO["on"], "videoTool": video_tools(), "videoErr": VIDEO["err"],
         "https": bool(TLS["srv"]), "httpsPort": HTTPS_PORT,
         "pull": PULL["on"], "pullUrl": PULL["url"], "pullErr": PULL["err"],
@@ -549,7 +617,8 @@ function startJpeg(){
     if(busy||mode!=='jpg') return; busy=true;
     try{
       const r=await fetch('/frame.jpg?k='+k+'&ts='+Date.now(),{cache:'no-store'});
-      if(!r.ok) throw new Error(r.status===503?'الجهاز ما يكدر يلتقط الشاشة':'خطأ '+r.status);
+      if(!r.ok){ let why=''; try{ why=await r.text(); }catch(e){}
+        throw new Error(r.status===503?('الجهاز ما يكدر يلتقط الشاشة — '+(why||'سبب غير معروف')):'خطأ '+r.status); }
       const blob=await r.blob();
       if(!blob.size) throw new Error('صورة فارغة');
       const u=URL.createObjectURL(blob), old=pic.src;
@@ -753,9 +822,17 @@ class ShareHandler(BaseHTTPRequestHandler):
             STATE["viewers"][self.client_address[0]] = time.time()
             data = capture()
             if not data:
-                return self.deny(503, "تعذر التقاط الشاشة")
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("X-Alh-Err", (CAP["err"] or "تعذر التقاط الشاشة").encode("utf-8").decode("latin-1", "replace"))
+                self.end_headers()
+                try:
+                    self.wfile.write((CAP["err"] or "تعذر التقاط الشاشة").encode())
+                except OSError:
+                    pass
+                return
             self.send_response(200)
-            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Type", "image/png" if data.startswith(PNG_MAGIC) else "image/jpeg")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
