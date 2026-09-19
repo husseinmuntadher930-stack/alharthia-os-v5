@@ -18,9 +18,10 @@ FRAME_MIN_MS = 220          # how often the screen is captured at most
 VIEWER_TIMEOUT = 8          # seconds without a frame request = viewer left
 IN_TIMEOUT = 6              # seconds without an incoming frame = sender stopped
 
+_LOCK = threading.Lock()
 STATE = {
     "srv": None, "thread": None, "on": False, "key": "", "pin": "",
-    "viewers": {}, "frame": b"", "frame_t": 0.0, "lock": threading.Lock(),
+    "viewers": {}, "frame": b"", "frame_t": 0.0, "lock": _LOCK, "cond": threading.Condition(_LOCK),
     "in_frame": b"", "in_t": 0.0, "in_name": "", "in_count": 0, "in_err": "", "hits": [],
 }
 
@@ -261,7 +262,7 @@ const go=document.getElementById('go'), st=document.getElementById('st'), pv=doc
 const errBox=document.getElementById('err'), stat=document.getElementById('stat');
 const SENDURL='%SENDURL%';
 const MOBILE=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-let stream=null, timer=null, sent=0, failed=0, lastErr='', busy=false;
+let stream=null, running=false, sent=0, failed=0, lastErr='', fps=0, fpsT=0, fpsN=0, quality=.5, wide=1280;
 const cv=document.createElement('canvas'), cx=cv.getContext('2d');
 
 function why(){
@@ -302,52 +303,74 @@ function showErr(t){
   errBox.innerHTML=t?('<b>الصورة ما توصل لشاشة الصف</b><br><span style="font-size:14px">'+t+'</span>'):'';
 }
 function showStat(){
-  stat.textContent=stream?('أُرسل '+sent+' إطار'+(failed?(' · فشل '+failed):'')):'';
+  stat.textContent=stream?(Math.round(fps)+' إطار/ثانية · أُرسل '+sent+(failed?(' · فشل '+failed):'')):'';
 }
 
 async function start(){
   if(why()) return;
-  try{ stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:10},audio:false}); }
+  try{ stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30,width:{ideal:1280}},audio:false}); }
   catch(e){ st.textContent='تم إلغاء المشاركة'; return; }
   pv.srcObject=stream; go.textContent='إيقاف المشاركة'; go.className='stop';
   st.textContent='المشاركة شغالة — شاشتك تطلع على شاشة الصف';
-  sent=failed=0; showErr(''); showStat();
+  sent=failed=0; fps=0; fpsN=0; fpsT=performance.now(); showErr(''); showStat();
   stream.getVideoTracks()[0].addEventListener('ended',stop);
-  timer=setInterval(send,300);
+  running=true; loop();
+}
+
+/* حلقة متتابعة: نرسل الإطار الجاي أول ما يخلص اللي قبله — تتأقلم مع سرعة الشبكة */
+async function loop(){
+  while(running){
+    const t0=performance.now();
+    const ok=await send();
+    if(!running) break;
+    fpsN++;
+    const now=performance.now();
+    if(now-fpsT>700){ fps=fpsN*1000/(now-fpsT); fpsN=0; fpsT=now; showStat(); }
+    // نخفّض الجودة تلقائياً إذا الإطار ياخذ وقت طويل، ونرفعها إذا سريع
+    const dt=now-t0;
+    if(ok){
+      if(dt>120&&quality>.32){ quality-=.04; if(quality<.45&&wide>960) wide=960; }
+      else if(dt<45&&quality<.6){ quality+=.02; if(quality>.55&&wide<1280) wide=1280; }
+    }
+    const wait=Math.max(0,28-dt);      // سقف ~٣٥ إطار/ثانية
+    if(wait) await new Promise(r=>setTimeout(r,wait));
+  }
 }
 function stop(){
-  if(timer) clearInterval(timer); timer=null;
+  running=false;
   if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
   pv.srcObject=null; go.textContent='ابدأ المشاركة'; go.className='';
   st.textContent='توقفت المشاركة'; showStat();
 }
 
 async function send(){
-  if(busy) return;
-  const v=pv; if(!v.videoWidth) return;
-  busy=true;
+  const v=pv;
+  if(!v.videoWidth) { await new Promise(r=>setTimeout(r,60)); return false; }
   try{
-    const w=Math.min(1280,v.videoWidth), h=Math.round(v.videoHeight*w/v.videoWidth);
-    cv.width=w; cv.height=h; cx.drawImage(v,0,0,w,h);
-    const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',.6));
-    if(!blob){ busy=false; return; }
+    const w=Math.min(wide,v.videoWidth), h=Math.round(v.videoHeight*w/v.videoWidth);
+    if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+    cx.drawImage(v,0,0,w,h);
+    const blob=await new Promise(r=>cv.toBlob(r,'image/jpeg',quality));
+    if(!blob) return false;
     const r=await fetch('/frame?k='+k+'&name='+encodeURIComponent(document.getElementById('nm').value||'جهاز'),
-                        {method:'POST',body:blob,headers:{'Content-Type':'image/jpeg'}});
+                        {method:'POST',body:blob,headers:{'Content-Type':'image/jpeg'},keepalive:false});
     if(!r.ok){
       failed++;
       let t=''; try{ t=(await r.text()).replace(/<[^>]*>/g,'').trim().slice(0,120); }catch(e){}
       showErr(r.status===403?'الرمز مو صحيح — ارجع للصفحة الرئيسية وافتح الرابط من جديد'
-            : r.status===503?'العرض اللاسلكي انطفأ على جهاز الصف'
+            : r.status===503?'مشاركة الشاشة انطفت على جهاز الصف'
             : ('الجهاز رد بالرمز '+r.status+(t?' — '+t:'')));
-    }else{
-      sent++; if(lastErr) showErr('');
+      await new Promise(res=>setTimeout(res,400));
+      return false;
     }
+    sent++; if(lastErr) showErr('');
+    return true;
   }catch(e){
     failed++;
     showErr('انقطع الاتصال بجهاز الصف — تأكد إنك على نفس شبكة الواي فاي ('+(e.message||e)+')');
+    await new Promise(res=>setTimeout(res,400));
+    return false;
   }
-  showStat();
-  busy=false;
 }
 go.onclick=()=>stream?stop():start();
 </script></body></html>"""
@@ -363,6 +386,7 @@ def note_hit(ip, what, code, tls=False):
 
 class ShareHandler(BaseHTTPRequestHandler):
     server_version = "AlharthiaShare/1.0"
+    protocol_version = "HTTP/1.1"      # اتصال واحد لكل الإطارات بدل اتصال لكل إطار
 
     def is_tls(self):
         return getattr(self.connection, "context", None) is not None
@@ -429,6 +453,7 @@ class ShareHandler(BaseHTTPRequestHandler):
                 STATE["in_frame"], STATE["in_t"] = data, time.time()
                 STATE["in_name"] = (q.get("name") or ["جهاز"])[0][:40]
                 STATE["in_count"] += 1
+                STATE["cond"].notify_all()
         note_hit(self.client_address[0], "POST /frame", 204, self.is_tls())
         self.send_response(204)
         self.send_header("Content-Length", "0")
@@ -514,6 +539,20 @@ def stop():
     if srv:
         threading.Thread(target=srv.shutdown, daemon=True).start()
     return status()
+
+
+def wait_frame(after=0.0, timeout=5.0):
+    """ينتظر إطار أحدث من `after`. يرجّع (البيانات، وقتها) أو (b"", after)."""
+    end = time.time() + timeout
+    with STATE["cond"]:
+        while True:
+            t = STATE["in_t"]
+            if STATE["in_frame"] and t > after and time.time() - t < IN_TIMEOUT:
+                return STATE["in_frame"], t
+            left = end - time.time()
+            if left <= 0:
+                return b"", after
+            STATE["cond"].wait(left)
 
 
 def incoming_frame():

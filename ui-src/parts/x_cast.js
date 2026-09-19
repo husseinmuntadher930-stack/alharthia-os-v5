@@ -10,7 +10,7 @@ ICONS.qr='<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" widt
 ICONS.apple='<path d="M12 6c0-2 1.5-3.5 3.5-3.6C15.7 4.4 14.2 6 12 6Z"/><path d="M17.5 12.5c0-2 1.3-3 1.4-3.1-.8-1.1-2-1.3-2.5-1.3-1.1-.1-2.1.6-2.7.6-.6 0-1.4-.6-2.4-.6-1.8 0-3.7 1.5-3.7 4.3 0 1.7.6 3.5 1.5 4.7.7 1 1.4 1.8 2.4 1.8s1.3-.6 2.4-.6 1.4.6 2.4.6 1.7-.9 2.4-1.9c.5-.7.8-1.4 1-1.8-1.6-.7-2.2-2.2-2.2-2.7Z"/>';
 
 const Cast={
-  st:null, iv:0, full:false, fullIv:0, qrUrl:'', sig:'',
+  st:null, iv:0, full:false, fullIv:0, qrUrl:'', sig:'', img:null,
   async poll(){
     if(!(window.Native&&Native.on)){ this.st={on:false,demo:true}; this.render(); return; }
     try{ this.st=await API.get('/api/share'); }catch(e){ this.st={on:false,err:errMsg(e)}; }
@@ -34,8 +34,9 @@ const Cast={
   render(force){
     const m=$('#castMain'); if(!m) return;
     const s=this.st||{};
-    const sig=JSON.stringify([s.on,s.url,s.incoming,s.from,s.frames,s.airplay,s.airplayErr,s.https,s.sendUrl,s.pin,(s.hits||[]).length,(s.hits||[])[0]]);
-    if(!force&&sig===this.sig){ if(s.incoming) this.tickImg($('#castImg')); return; }
+    // عدد الإطارات يتغير كل ثانية — ما ندخله بالبصمة حتى ما نعيد بناء البطاقة كلها ونكسر البث
+    const sig=JSON.stringify([s.on,s.url,!!s.incoming,s.from,s.airplay,s.airplayErr,s.https,s.sendUrl,s.pin,(s.hits||[]).length,(s.hits||[])[0]]);
+    if(!force&&sig===this.sig){ this.updState(s); return; }
     this.sig=sig;
     const on=!!s.on, url=s.url||'', ap=s.airplay||'missing';
     m.innerHTML=`<div class="app-head"><h1 class="h1">مشاركة الشاشة</h1><span class="grow"></span>
@@ -64,12 +65,9 @@ const Cast={
               <td class="${x.code<300?'ok':'bad'}">${x.code}</td><td>${x.tls?'🔒':'—'}</td><td>قبل ${nf(Math.round(x.ago))} ث</td></tr>`).join('')}</table>
             <p class="hint">إذا ماكو ولا سطر، يعني اللابتوب ما وصل للجهاز أصلاً. إذا فيه سطر برمز <b>403</b> يعني الرمز غلط.</p></details>`
             :on?`<p class="hint" style="color:var(--warn)">${icon('info')} ما وصل ولا اتصال من أي جهاز — تأكد إن اللابتوب على نفس الشبكة وفتح العنوان فعلاً.</p>`:''}
-          <div class="cast-state ${s.incoming?'ok':s.frames?'warn':''}">
-            ${s.incoming?`${icon('check')} تستقبل الآن من <b>${esc(s.from||'جهاز')}</b> · ${nf(s.frames||0)} إطار`
-              :s.frames?`${icon('info')} وصلت ${nf(s.frames)} إطار وبعدين توقفت${s.ago!=null?` (آخر إطار قبل ${nf(Math.round(s.ago))} ثانية)`:''}`
-              :`${icon('info')} ما وصل ولا إطار بعد — افتح العنوان بالكمبيوتر واضغط «شارك شاشتك»`}</div>`
+          <div class="cast-state ${this.stateCls(s)}">${this.stateHtml(s)}</div>`
           :`<p class="hint">شغّله ويطلع لك عنوان ورمز QR تفتحه بالكمبيوتر.</p>`}
-        ${s.incoming?`<div class="cast-in"><img id="castImg" alt="">
+        ${s.incoming?`<div class="cast-in" id="castSlot">
             <div class="btns" style="margin-top:10px"><button class="btn primary" data-cast="full">${icon('fit')}ملء الشاشة</button></div></div>`:''}
       </div>
 
@@ -91,22 +89,64 @@ const Cast={
     const t=$('#castOn'); if(t) t.onchange=()=>this.toggle(t.checked);
     const a=$('#castAir'); if(a) a.onchange=()=>this.airplay(a.checked);
     if(on&&url) this.drawQR(url);
-    if(s.incoming) this.tickImg($('#castImg'));
+    const slot=$('#castSlot');
+    if(slot&&!this.full) slot.insertBefore(this.imgEl(),slot.firstChild);
+    if(!s.incoming) this.drop();
   },
+  stateCls(s){ return s.incoming?'ok':s.frames?'warn':''; },
+  stateHtml(s){
+    return s.incoming?`${icon('check')} تستقبل الآن من <b>${esc(s.from||'جهاز')}</b> · ${nf(s.frames||0)} إطار`
+      :s.frames?`${icon('info')} وصلت ${nf(s.frames)} إطار وبعدين توقفت${s.ago!=null?` (آخر إطار قبل ${nf(Math.round(s.ago))} ثانية)`:''}`
+      :`${icon('info')} ما وصل ولا إطار بعد — افتح العنوان بالكمبيوتر واضغط «شارك شاشتك»`;
+  },
+  /* تحديث خفيف: عدّاد الإطارات بس، بدون ما نعيد بناء البطاقة ونقطع البث */
+  updState(s){
+    const el=$('#castMain .cast-state'); if(!el) return;
+    el.className='cast-state '+this.stateCls(s);
+    el.innerHTML=this.stateHtml(s);
+  },
+  /* بث MJPEG: اتصال واحد يظل مفتوح والإطارات تنزل عليه — أسلس بكثير من طلب لكل إطار */
+  streamUrl(){ return '/api/share/stream.mjpeg?t='+encodeURIComponent(API.tok||'')+'&s='+Date.now(); },
   imgUrl(){ return '/api/share/incoming.jpg?t='+encodeURIComponent(API.tok||'')+'&ts='+Date.now(); },
-  tickImg(img){ if(!img) return; img.src=this.imgUrl(); },
+  /* نربط الصورة بالبث، وإذا فشل نرجع للاستطلاع */
+  live(img,onFail){
+    if(!img) return;
+    let fell=false;
+    const fallback=()=>{ if(fell) return; fell=true;
+      const iv=setInterval(()=>{ if(this.img&&this.img!==img){ clearInterval(iv); return; } img.src=this.imgUrl(); },200);
+      img._iv=iv; onFail&&onFail(); };
+    img.onerror=fallback;
+    img.src=this.streamUrl();
+    // إذا ما وصلت ولا صورة خلال ٤ ثواني، نرجع للاستطلاع
+    setTimeout(()=>{ if(!img.naturalWidth) fallback(); },4000);
+  },
+  unlive(img){ if(img&&img._iv){ clearInterval(img._iv); img._iv=0; } },
+  /* عنصر صورة واحد يعيش طول الجلسة: ننقله بين البطاقة وملء الشاشة بدل ما نعيد إنشاءه
+     — إعادة الإنشاء تفتح بث جديد كل مرة وتسبب التقطيع */
+  imgEl(){
+    if(!this.img){
+      const i=document.createElement('img'); i.id='castImg'; i.alt='';
+      this.img=i; this.live(i);
+    }
+    return this.img;
+  },
+  drop(){ if(this.img){ this.unlive(this.img); this.img.remove(); this.img=null; } },
   openFull(){
     this.full=true;
     const el=$('#castFull'); el.hidden=false;
-    el.innerHTML=`<img alt=""><div class="cast-wait">${icon('info')} ما وصلت صورة بعد</div>
+    el.innerHTML=`<div class="cast-wait">${icon('info')} ما وصلت صورة بعد</div>
       <button class="btn ghost" data-cast="exitFull">${icon('x')}خروج</button>`;
-    const img=el.querySelector('img');
+    const img=this.imgEl();
     img.onload=()=>el.querySelector('.cast-wait')?.setAttribute('hidden','');
-    img.onerror=()=>el.querySelector('.cast-wait')?.removeAttribute('hidden');
-    clearInterval(this.fullIv);
-    this.fullIv=setInterval(()=>{ img.src=this.imgUrl(); },250);
+    el.insertBefore(img,el.firstChild);   // نقل العنصر — البث يظل مفتوح
   },
-  closeFull(){ this.full=false; clearInterval(this.fullIv); $('#castFull').hidden=true; },
+  closeFull(){
+    this.full=false;
+    const el=$('#castFull');
+    const slot=$('#castSlot');
+    if(this.img){ if(slot) slot.insertBefore(this.img,slot.firstChild); else this.img.remove(); }
+    el.hidden=true; el.innerHTML='';
+  },
   init(){
     document.addEventListener('click',async e=>{
       const b=e.target.closest('[data-cast]'); if(!b) return;
@@ -119,4 +159,4 @@ const Cast={
   }
 };
 onShow.cast=()=>{ Cast.sig=''; Cast.poll(); clearInterval(Cast.iv); Cast.iv=setInterval(()=>{ if(current==='cast') Cast.poll(); },2000); };
-onHide.cast=()=>{ clearInterval(Cast.iv); };
+onHide.cast=()=>{ clearInterval(Cast.iv); Cast.drop(); };

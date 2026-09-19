@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "1.8.2"
+VERSION = "1.8.3"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -272,6 +272,8 @@ RECEIVED_DONE = set()
 def received_since(ts):
     folder = os.path.join(HOME, FOLDERS["bt"])
     items = []
+    if not os.path.isdir(folder):   # المجلد ينبني أول ما يوصل ملف — قبلها نرجع فاضي مو خطأ
+        return items
     for name in os.listdir(folder):
         if name.startswith("."):
             continue
@@ -712,7 +714,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.token_ok(q):
             return self.fail("unauthorized", 401)
         # الامتداد جزء من اسم الملف بالرابط (مثل /api/share/incoming.jpg) وما يدخل باسم الدالة
-        name = re.sub(r"\.(jpg|jpeg|png|json|txt)$", "", u.path[5:]).replace("/", "_")
+        name = re.sub(r"\.[A-Za-z0-9]{1,6}$", "", u.path[5:]).replace("/", "_")
         fn = getattr(self, f"api_{name}", None)
         if not fn:
             return self.fail("unknown endpoint", 404)
@@ -1121,6 +1123,34 @@ class Handler(BaseHTTPRequestHandler):
                 return sh.status()
             return sh.start() if b.get("on") else sh.stop()
         return sh.status()
+
+    def api_share_stream(self, m, q):
+        """بث MJPEG: اتصال واحد يظل مفتوح والإطارات تنزل عليه — أسلس بكثير من طلب لكل إطار."""
+        import alharthia_share as sh
+        bnd = "alhframe"
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=%s" % bnd)
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        last, idle = 0.0, 0
+        try:
+            while True:
+                data, last = sh.wait_frame(last, timeout=2.0)
+                if not data:
+                    idle += 1
+                    if idle > 30:            # دقيقة بدون أي إطار = نسكّر
+                        return
+                    continue
+                idle = 0
+                self.wfile.write(b"--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n"
+                                 % (bnd.encode(), len(data)))
+                self.wfile.write(data)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+        except (OSError, ValueError):
+            pass
 
     def api_share_incoming(self, m, q):
         import alharthia_share as sh
