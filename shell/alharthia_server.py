@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -1183,6 +1183,37 @@ class Handler(BaseHTTPRequestHandler):
             msg = (pr.stderr or pr.stdout or b"").decode("utf-8", "replace").strip()[:200]
             raise RuntimeError("%s (%s)" % (msg or "تعذر التقاط الشاشة", _sh.CAP.get("env", "")))
         return {"ok": True, "path": path, "name": name}
+
+    def api_freeze(self, m, q):
+        """لقطة مؤقتة لتجميد الشاشة وقت «الكتابة فوق الشاشة».
+
+        ترجع الصورة نفسها بالرد — ما تنحفظ بمجلد «الصور» وما تطلع إشعار حفظ،
+        لأن الهدف منها إنها تصير خلفية مجمّدة نكتب فوكها ومو لقطة يريدها المدرّس.
+        """
+        import alharthia_share as _sh
+        tool = next((t for t in ("grim", "wayshot", "scrot") if has(t)), None)
+        if not tool:
+            raise RuntimeError("أداة اللقطات غير مثبتة — ثبّت grim")
+        path = os.path.join(_sh._tls_dir(), "freeze.png")
+        args = {"grim": [tool, path], "wayshot": [tool, "-f", path], "scrot": [tool, "-o", path]}[tool]
+        pr = subprocess.run(args, capture_output=True, timeout=20, env=_sh.wl_env())
+        if pr.returncode != 0 or not os.path.exists(path):
+            msg = (pr.stderr or pr.stdout or b"").decode("utf-8", "replace").strip()[:200]
+            raise RuntimeError("%s (%s)" % (msg or "تعذر التقاط الشاشة", _sh.CAP.get("env", "")))
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
 
     def api_time_tz(self, m, q):
         tz = self.jbody()["tz"]

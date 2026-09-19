@@ -686,6 +686,9 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .sp-o.on svg{color:var(--acc)}
 .sp-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 /* draw over the frozen screen */
+/* صورة الشاشة المجمّدة: تنلتقط أول ما ندخل وضع الكتابة وتصير خلفية ثابتة نكتب فوكها */
+#annotFreeze{position:fixed;inset:0;width:100%;height:100%;object-fit:fill;z-index:149;pointer-events:none;background:var(--bg)}
+#annotFreeze[hidden]{display:none}
 #board.annot-mode{position:fixed;inset:0;z-index:150;background:transparent;display:flex}
 #board.annot-mode #boardStrip,#board.annot-mode #boardDock,#board.annot-mode #focusBtn,#board.annot-mode #bPop{display:none!important}
 #board.annot-mode #boardArea{background:transparent}

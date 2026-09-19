@@ -252,7 +252,7 @@ function recognize(s,W){
 /* ---- backgrounds ---- */
 const BG_TYPES=[['white','أبيض'],['black','أسود'],['chalk','أخضر طباشير'],['navy','كحلي'],['grid','مربعات'],['bigGrid','مربعات كبيرة'],['graph','ورق بياني'],['dots','نقاط'],['lines','أسطر دفتر'],['callig','كراسة خط'],['iso','شبكة مثلثات'],['coord','مستوى إحداثي'],['music','نوتة موسيقية']];
 const DARK_BG=new Set(['black','chalk','navy']);
-const bgIsDark=bg=>DARK_BG.has(bg.type)||(bg.type==='color'&&(()=>{const [r,g,b]=hex2rgb(bg.color);return (r*299+g*587+b*114)/1000<130;})());
+const bgIsDark=bg=>bg.dark!=null?!!bg.dark:DARK_BG.has(bg.type)||(bg.type==='color'&&(()=>{const [r,g,b]=hex2rgb(bg.color);return (r*299+g*587+b*114)/1000<130;})());
 function drawBg(x,bg,W,H,onload){
   const k=W/REF; x.save();
   const hl=(y,c,w=1)=>{x.strokeStyle=c;x.lineWidth=w;x.beginPath();x.moveTo(0,y);x.lineTo(W,y);x.stroke();};

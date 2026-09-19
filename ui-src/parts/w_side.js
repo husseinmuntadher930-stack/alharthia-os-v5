@@ -104,7 +104,7 @@ const Side={
       case 'files': Annot.exit(); this.hide(); go('files'); break;
       case 'bt': Annot.exit(); this.hide(); go('settings','conn'); break;
       case 'board': Annot.exit(); this.hide(); go('board'); break;
-      case 'annot': Annot.enter(); this.show(this.side); break;
+      case 'annot': Annot.enter().then(()=>this.show(this.side)); break;
       case 'assist': Board.doAct('assist'); this.show(this.side); break;
       case 'undo': Board.undo(); break;
       case 'clear': Board.clearPage(); break;
@@ -182,23 +182,66 @@ const Side={
 
 /* ---------- draw over the frozen screen ---------- */
 const Annot={
-  on:false, prev:null, doc:null,
-  enter(){
+  on:false, prev:null, doc:null, frozen:false,
+  /* نجمّد الشاشة فعلياً: نلتقط صورة للوضع الحالي وين ما كان ونخليها خلفية،
+     فالفيديو والساعة وأي شي متحرك يوقف. الصورة مؤقتة — ما تنحفظ بمجلد «الصور». */
+  async freeze(){
+    this.frozen=false;
+    const img=$('#annotFreeze'); if(!img) return;
+    // #os موضعه fixed، ويعني بكروم يصير «سياق تكديس» مستقل — فأي عنصر بره ما يكدر
+    // ينزل تحت السبورة الي جواه. لازم صورة التجميد تكون جوا #os حتى ترتيب الطبقات يشتغل.
+    const os=$('#os'); if(os&&img.parentElement!==os) os.appendChild(img);
+    if(!(window.Native&&Native.on)) return;      // بالمعاينة ماكو شاشة نلتقطها
+    Side.closePop&&Side.closePop();
+    const p=$('#sidePanel'), was=p&&!p.hidden;
+    if(p) p.hidden=true;                          // حتى ما تنطبع القائمة بالصورة
+    await new Promise(r=>setTimeout(r,120));
+    try{
+      const url='/api/freeze.png?t='+encodeURIComponent(API.tok||'')+'&ts='+Date.now();
+      await Promise.race([
+        new Promise((ok,no)=>{ img.onload=ok; img.onerror=no; img.src=url; }),
+        new Promise((ok,no)=>setTimeout(()=>no(new Error('timeout')),4000))   // ما ننتظر أكثر من ٤ ثواني
+      ]);
+      img.hidden=false; this.frozen=true;
+    }catch(e){ img.hidden=true; img.removeAttribute('src'); }
+    if(was&&p) p.hidden=false;
+  },
+  unfreeze(){
+    const img=$('#annotFreeze'); if(!img) return;
+    img.hidden=true; img.removeAttribute('src'); this.frozen=false;
+  },
+  /* القلم الافتراضي أسود — وهذا ما ينشاف على شاشة غامجة.
+     نقيس إضاءة الصورة المجمّدة، وإذا غامجة نعلّم الصفحة «غامجة» فالسبورة
+     تبدّل لوحة الألوان لحالها (أبيض بدل أسود) بنفس منطق الخلفية السودة. */
+  darkShot(img){
+    try{
+      const c=document.createElement('canvas'); c.width=32; c.height=20;
+      const x=c.getContext('2d'); x.drawImage(img,0,0,32,20);
+      const d=x.getImageData(0,0,32,20).data;
+      let l=0; for(let i=0;i<d.length;i+=4) l+=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];
+      return l/(d.length/4)<115;
+    }catch(e){ return false; }
+  },
+  async enter(){
     if(this.on) return;
     this.prev=current;
+    await this.freeze();
+    if(this.on) return;
+
     this.doc={pages:Board.pages,pi:Board.pi};
-    Board.pages=[Board.newPage({type:'none'})]; Board.pi=0;
+    Board.pages=[Board.newPage({type:'none',dark:this.frozen&&this.darkShot($('#annotFreeze'))})]; Board.pi=0;
     Board.overlay=true;
     document.documentElement.classList.add('annot');
     const b=$('#board'); b.classList.add('on','annot-mode');
     Board.setTool('ink');
     requestAnimationFrame(()=>{ Board.resize(); Board.goPage(0); });
     this.on=true;
-    toast('وضع الكتابة فوق الشاشة — الصفحة مجمّدة، اكتب بأي مكان');
+    toast(this.frozen?'الشاشة مجمّدة — اكتب بأي مكان':'وضع الكتابة فوق الشاشة — اكتب بأي مكان');
   },
   exit(){
     if(!this.on) return;
     this.on=false;
+    this.unfreeze();
     Board.closePop&&Board.closePop();
     Board.inst=[]; Board.renderInst();
     Board.pages=this.doc.pages; Board.pi=this.doc.pi; this.doc=null;
