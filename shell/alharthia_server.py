@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "1.8.5"
+VERSION = "2.0.0"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -82,6 +82,51 @@ def safe_path(p, must_exist=True):
     return real
 
 
+# ---------------------------------------------------------------- system-file guard
+def protected_paths():
+    """المسارات الي ما تنحذف ولا تتغير أسماءها ولا تنقل — عمود النظام."""
+    keep = {os.path.realpath(HOME)}
+    keep |= {os.path.realpath(os.path.join(HOME, v)) for v in FOLDERS.values()}
+    for m in MEDIA_ROOTS:
+        if os.path.isdir(m):
+            keep.add(os.path.realpath(m))
+    return keep
+
+
+def is_system(real):
+    """ملف نظام: مجلد أساسي، أو أي شي مخفي (يبدي بنقطة) داخل مجلد المستخدم."""
+    if real in protected_paths():
+        return True
+    home = os.path.realpath(HOME)
+    if real.startswith(home + os.sep):
+        rel = real[len(home) + 1:]
+        # ‎~/.config ‎~/.local ‎~/.ssh ‎~/.alharthia … وكل شي جواهن
+        if rel.split(os.sep)[0].startswith("."):
+            return True
+    return False
+
+
+def guard(real, what="تعديل"):
+    if is_system(real):
+        raise PermissionError("هذا من ملفات النظام — ما يصير %s" % what)
+    return real
+
+
+# ---------------------------------------------------------------- role (student / teacher / dev)
+ROLE = {"cur": "dev"}
+ROLE_BLOCKED = {
+    # الطالب: بدون إنترنت ولا تيرمنال ولا تثبيت برامج
+    "student": {"chromium", "chromiumfull", "chromium-browser", "firefox", "firefox-esr",
+                "terminal", "foot", "xterm", "lxterminal", "store"},
+    "teacher": {"terminal", "foot", "xterm", "lxterminal"},
+    "dev": set(),
+}
+
+
+def role_allows(app_id):
+    return (app_id or "") not in ROLE_BLOCKED.get(ROLE["cur"], set())
+
+
 def entry(path):
     st = os.stat(path)
     name = os.path.basename(path)
@@ -133,6 +178,23 @@ def usb_devices():
             res.append({"dev": p.get("path"), "disk": disk.get("path"), "label": p.get("label") or disk.get("model") or "USB",
                         "model": (disk.get("model") or "").strip(), "fstype": p.get("fstype"), "size": int(p.get("size") or 0),
                         "mount": mp, "used": used, "free": free})
+    # فلاشتين بنفس الاسم يطلعون متطابقين بالقائمة والمدرّس ما يفرّق بينهن —
+    # نضيف الموديل، وإذا حتى الموديل نفسه نضيف اسم الجهاز (sda1 / sdb1).
+    counts = {}
+    for d in res:
+        counts[d["label"]] = counts.get(d["label"], 0) + 1
+    dup = {k for k, n in counts.items() if n > 1}
+    if dup:
+        models = {}
+        for d in res:
+            if d["label"] in dup:
+                models.setdefault(d["label"], []).append(d["model"])
+        for d in res:
+            lb = d["label"]
+            if lb not in dup:
+                continue
+            extra = d["model"] if d["model"] and models[lb].count(d["model"]) == 1 else os.path.basename(d["dev"])
+            d["label"] = "%s (%s)" % (lb, extra)
     return res
 
 
@@ -320,6 +382,11 @@ def app_installed(app_id):
 
 def launch(app_id=None, path=None, url=None):
     env = dict(os.environ)
+    # المنع الحقيقي هنا: حتى لو انفتحت الواجهة بطريقة ثانية، التشغيل ينرفض
+    if url and not role_allows("chromium"):
+        raise PermissionError("الإنترنت مقفل بواجهة الطالب")
+    if app_id and not role_allows(app_id):
+        raise PermissionError("هذا البرنامج مو متاح بهذه الواجهة")
     if url:
         spec = CATALOG["builtin"]["chromium"]
         exe = find_bin(spec)
@@ -821,18 +888,40 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(target, exist_ok=False)
         return entry(target)
 
+    def api_fs_newfile(self, m, q):
+        """ملف فاضي جديد — لتنظيم الكتب والملخصات."""
+        b = self.jbody()
+        parent = safe_path(b["path"])
+        if not os.path.isdir(parent):
+            raise PermissionError("المسار مو مجلد")
+        name = os.path.basename((b.get("name") or "").strip())
+        if not name or name.startswith("."):
+            raise PermissionError("اسم غير صالح")
+        if "." not in name:
+            name += ".txt"
+        target = os.path.join(parent, name)
+        stem, ext = os.path.splitext(name)
+        i = 2
+        while os.path.exists(target):
+            target = os.path.join(parent, f"{stem} ({i}){ext}")
+            i += 1
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(b.get("body") or "")
+        return entry(target)
+
     def api_fs_delete(self, m, q):
         for p in self.jbody().get("paths", []):
-            real = safe_path(p)
-            if real in allowed_roots() or real == os.path.join(HOME, FOLDERS["docs"]):
-                raise PermissionError("ما ينحذف هذا المجلد")
+            real = guard(safe_path(p), "حذفه")
             shutil.rmtree(real) if os.path.isdir(real) and not os.path.islink(real) else os.remove(real)
         return {"ok": True}
 
     def api_fs_rename(self, m, q):
         b = self.jbody()
-        real = safe_path(b["path"])
-        target = os.path.join(os.path.dirname(real), os.path.basename(b["name"]))
+        real = guard(safe_path(b["path"]), "تغيير اسمه")
+        name = os.path.basename(b["name"]).strip()
+        if not name or name.startswith("."):
+            raise PermissionError("اسم غير صالح")
+        target = os.path.join(os.path.dirname(real), name)
         if os.path.exists(target):
             raise RuntimeError("يوجد ملف بنفس الاسم")
         os.rename(real, target)
@@ -843,6 +932,8 @@ class Handler(BaseHTTPRequestHandler):
         dest = safe_path(b["dest"])
         for p in b.get("paths", []):
             src = safe_path(p)
+            if b.get("move"):
+                guard(src, "نقله")
             name = os.path.basename(src)
             target = os.path.join(dest, name)
             stem, ext = os.path.splitext(name)
@@ -1012,10 +1103,23 @@ class Handler(BaseHTTPRequestHandler):
         return launch(b.get("id"), b.get("path"), b.get("url"))
 
     def api_apps_install(self, m, q):
+        if not role_allows("store"):
+            raise PermissionError("تثبيت البرامج مو متاح بواجهة الطالب")
         return start_job(*install_args(self.jbody()["id"]))
 
     def api_apps_remove(self, m, q):
+        if not role_allows("store"):
+            raise PermissionError("إزالة البرامج مو متاح بواجهة الطالب")
         return start_job(*remove_args(self.jbody()["id"]))
+
+    def api_role(self, m, q):
+        """الواجهة تخبر النظام منو داخل، والنظام يطبّق المنع على مستوى التشغيل."""
+        if m == "POST":
+            r = (self.jbody().get("role") or "").strip()
+            if r not in ROLE_BLOCKED:
+                raise PermissionError("دور غير معروف")
+            ROLE["cur"] = r
+        return {"role": ROLE["cur"], "blocked": sorted(ROLE_BLOCKED[ROLE["cur"]])}
 
     def api_jobs(self, m, q):
         job = JOBS.get(q.get("id", [""])[0])

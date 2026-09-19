@@ -387,6 +387,39 @@ function patchFiles(){
     await N.refreshRoots(true); if(N.rootOf(NF.path||'').dev===dev||!N.roots.some(r=>NF.path&&NF.path.startsWith(r.path))) NF.path=N.roots[0].path; this.render();
   };
   Files.eject=function(){ const u=N.roots.find(r=>r.dev); if(u) this.ejectDev(u.dev); };
+  /* ---------- منتقي الوجهة: ينقل/ينسخ لأي مجلد بالجهاز أو بالفلاشة ---------- */
+  Files.pickDest=function(title){
+    let cur=NF.path||N.roots[0].path;
+    return modal({title,iconName:'folder',wide:true,
+      body:`<div class="dp"><div class="dp-crumbs" id="dpCrumbs"></div><div class="dp-list" id="dpList"></div>
+        <p class="hint" id="dpCur"></p></div>`,
+      actions:[{label:'إلغاء',val:null,cls:'ghost'},{label:'اختيار هذا المجلد',val:()=>cur,cls:'primary'}],
+      onOpen:(ov,done)=>{
+        const L=$('#dpList',ov), C=$('#dpCrumbs',ov), T=$('#dpCur',ov);
+        const draw=async()=>{
+          const r=N.rootOf(cur), rel=cur.slice(r.path.length).split('/').filter(Boolean);
+          const crumbs=[[r.path,r.dev?'فلاشة '+r.name:'الذاكرة الداخلية']]; let acc=r.path;
+          for(const x of rel){ acc+='/'+x; crumbs.push([acc,x]); }
+          C.innerHTML=N.roots.map(x=>`<button class="btn sm${N.rootOf(cur).path===x.path?' primary':''}" data-dproot="${esc(x.path)}">${icon(x.dev?'usb':'hdd')}${esc(x.dev?x.name:'الداخلية')}</button>`).join('')+
+            '<span class="sepc">›</span>'+crumbs.map(([pp,nm],i)=>`${i?'<span class="sepc">›</span>':''}<button class="dp-cr" data-dpgo="${esc(pp)}">${esc(nm)}</button>`).join('');
+          T.textContent='الوجهة: '+cur;
+          L.innerHTML='<div class="empty"><div class="spin"></div></div>';
+          let items=[];
+          try{ const j=await API.get('/api/fs/list?path='+encodeURIComponent(cur)); items=j.items.filter(x=>x.dir); }catch(e){}
+          L.innerHTML=(rel.length?`<button class="dp-row" data-dpgo="${esc(cur.slice(0,cur.lastIndexOf('/')))}">${icon('chevR')}<b>.. رجوع</b></button>`:'')+
+            (items.length?items.map(x=>`<button class="dp-row" data-dpgo="${esc(x.path)}">${icon('folder')}<b>${esc(x.name)}</b></button>`).join('')
+              :'<div class="empty" style="padding:18px">ماكو مجلدات فرعية — تكدر تختار هذا المجلد</div>');
+          paintIcons(L); paintIcons(C);
+        };
+        ov.addEventListener('click',e=>{
+          const g=e.target.closest('[data-dpgo]'), r2=e.target.closest('[data-dproot]');
+          if(r2){ cur=r2.dataset.dproot; draw(); return; }
+          if(g){ cur=g.dataset.dpgo; draw(); }
+        });
+        draw();
+      }});
+  };
+
   Files.renderMain=function(){
     const r=root(), rel=NF.path.slice(r.path.length).split('/').filter(Boolean);
     const crumbs=[[r.path,r.dev?'فلاشة '+r.name:'الذاكرة الداخلية']]; let acc=r.path; for(const s of rel){ acc+='/'+s; crumbs.push([acc,s]); }
@@ -398,12 +431,14 @@ function patchFiles(){
         <button class="icon-btn" data-nfx="view" title="طريقة العرض">${icon(NF.view==='grid'?'list':'apps')}</button>
         <button class="icon-btn${NF.selMode?' on':''}" data-nfx="select" title="تحديد">${icon('check')}</button>
         <button class="icon-btn" data-nfx="newdir" title="مجلد جديد">${icon('folderPlus')}</button>
+        <button class="icon-btn" data-nfx="newfile" title="ملف جديد">${icon('filePlus')}</button>
         <button class="icon-btn" data-nfx="refresh" title="تحديث">${icon('restart')}</button>
       </div><div class="${NF.view==='list'?'flist':''} ${NF.selMode?'selmode':''}"><div class="fgrid" id="fxGrid"></div></div>
       <div id="fxSelBar">${NF.selMode&&NF.sel.size?`<div class="selbar"><b>تم تحديد ${nf(NF.sel.size)}</b>
         ${NF.sel.size===1?`<button class="btn sm" data-nfx="open">${icon('doc')}فتح</button><button class="btn sm" data-nfx="rename">${icon('edit')}إعادة تسمية</button>`:''}
-        <button class="btn sm" data-nfx="copy" ${canOther?'':'disabled'}>${icon('copy')}نسخ إلى ${other}</button>
-        <button class="btn sm" data-nfx="move" ${canOther?'':'disabled'}>${icon('upload')}نقل إلى ${other}</button>
+        <button class="btn sm" data-nfx="copy">${icon('copy')}نسخ إلى…</button>
+        <button class="btn sm" data-nfx="move">${icon('moveTo')}نقل إلى…</button>
+        ${canOther?`<button class="btn sm ghost" data-nfx="quick" title="نسخ سريع">${icon('upload')}نسخ لـ${other}</button>`:''}
         <button class="btn sm danger" data-nfx="del">${icon('trash')}حذف</button></div>`:''}</div>`;
     const qi=$('#nfxQ'); let qt=0; qi.oninput=()=>{ clearTimeout(qt); qt=setTimeout(async()=>{ NF.q=qi.value.trim(); await Files.load(); Files.renderGrid(); },350); };
     this.renderGrid();
@@ -427,14 +462,21 @@ function patchFiles(){
         if(a==='view'){ NF.view=NF.view==='grid'?'list':'grid'; return this.renderMain(); }
         if(a==='select'){ NF.selMode=!NF.selMode; NF.sel.clear(); return this.renderMain(); }
         if(a==='refresh') return this.render();
-        if(a==='newdir'){ const n=await promptBox('اسم المجلد الجديد','مجلد جديد'); if(n){ await API.post('/api/fs/mkdir',{path:NF.path,name:n}); this.render(); } return; }
+        if(a==='newdir'){ const n=await promptBox('اسم المجلد الجديد','مجلد جديد'); if(n){ await API.post('/api/fs/mkdir',{path:NF.path,name:n}); this.render(); toast('تم إنشاء المجلد'); } return; }
+        if(a==='newfile'){ const n=await promptBox('اسم الملف الجديد','ملخص جديد.txt','مثال: ملخص الفصل الأول.txt');
+          if(n){ const r=await API.post('/api/fs/newfile',{path:NF.path,name:n}); this.render(); toast('تم إنشاء «'+r.name+'»'); } return; }
         if(a==='open'){ const it=NF.items.find(x=>x.path===sel[0]); NF.selMode=false; NF.sel.clear(); this.renderMain(); return this.openNode(it); }
         if(a==='rename'){ const it=NF.items.find(x=>x.path===sel[0]); const n=await promptBox('إعادة تسمية',it.name); if(n&&n!==it.name){ await API.post('/api/fs/rename',{path:it.path,name:n}); NF.sel.clear(); this.render(); toast('تمت إعادة التسمية'); } return; }
         if(a==='del'){ if(await confirmBox('حذف الملفات',`راح ينحذف ${nf(sel.length)} عنصر نهائياً.`,'حذف',true,'trash')){ await API.post('/api/fs/delete',{paths:sel}); NF.sel.clear(); this.render(); toast('تم الحذف'); } return; }
-        if(a==='copy'||a==='move'){
-          const r=root(), dest=r.dev?N.folders.docs:(N.roots.find(x=>x.dev)||{}).path; if(!dest) return toast('ماكو فلاشة',false);
-          const box=modal({title:a==='copy'?'جاري النسخ…':'جاري النقل…',iconName:'copy',body:'<div class="empty"><div class="spin"></div>انتظر لحد ما تخلص العملية</div>',actions:[]});
-          try{ await API.post('/api/fs/copy',{paths:sel,dest,move:a==='move'}); toast(a==='copy'?'تم النسخ':'تم النقل'); }
+        if(a==='copy'||a==='move'||a==='quick'){
+          const mv=a==='move';
+          let dest;
+          if(a==='quick'){ const r=root(); dest=r.dev?N.folders.docs:(N.roots.find(x=>x.dev)||{}).path; if(!dest) return toast('ماكو فلاشة',false); }
+          else dest=await this.pickDest(mv?'نقل إلى أي مجلد':'نسخ إلى أي مجلد');
+          if(!dest) return;
+          if(sel.some(p=>dest===p||dest.startsWith(p+'/'))) return toast('ما تكدر تنقل المجلد جوا نفسه',false);
+          modal({title:mv?'جاري النقل…':'جاري النسخ…',iconName:'copy',body:'<div class="empty"><div class="spin"></div>انتظر لحد ما تخلص العملية</div>',actions:[]});
+          try{ await API.post('/api/fs/copy',{paths:sel,dest,move:mv}); toast(mv?'تم النقل':'تم النسخ'); }
           finally{ $('#modalHost .overlay:last-child')?.remove(); }
           NF.sel.clear(); N.refreshRoots(true); return this.render();
         }

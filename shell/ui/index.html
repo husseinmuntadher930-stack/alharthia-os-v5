@@ -686,6 +686,41 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .sp-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 /* draw over the frozen screen */
 /* صورة الشاشة المجمّدة: تنلتقط أول ما ندخل وضع الكتابة وتصير خلفية ثابتة نكتب فوكها */
+/* ---------- منتقي الوجهة بمستكشف الملفات ---------- */
+.dp{display:flex;flex-direction:column;gap:10px;min-height:280px}
+.dp-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.dp-cr{background:none;border:0;color:var(--acc);font:inherit;font-weight:600;cursor:pointer;padding:4px 6px;border-radius:8px}
+.dp-cr:hover{background:var(--surface-2)}
+.dp-list{flex:1;max-height:min(46vh,340px);overflow:auto;border:1px solid var(--line);border-radius:12px;padding:6px;background:var(--surface-2)}
+.dp-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;border-radius:10px;background:none;
+  font:inherit;color:var(--text);cursor:pointer;text-align:start}
+.dp-row:hover{background:var(--surface)}
+.dp-row .i{width:20px;height:20px;color:var(--acc);flex:none}
+.dp-row b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ---------- شاشة «منو يستخدم النظام؟» ---------- */
+#welcome{position:fixed;inset:0;z-index:240;background:linear-gradient(160deg,#0b1020,#111827 55%,#0b1020);display:grid;place-items:center;padding:16px;overflow:auto}
+#welcome[hidden]{display:none}
+html.gated #os,html.gated #sideWrap{pointer-events:none}
+.wl-box{width:min(1000px,100%);text-align:center}
+.wl-hd h1{font-size:clamp(26px,5vw,44px);color:#fff;margin:0 0 4px;font-weight:800}
+.wl-hd p{color:#cbd5e1;margin:0 0 clamp(14px,3vh,28px);font-size:clamp(14px,2.4vw,20px)}
+.wl-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(10px,2vw,20px)}
+.rcard{display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 0 12px;border:2px solid rgba(255,255,255,.12);
+  border-radius:18px;background:rgba(255,255,255,.04);cursor:pointer;overflow:hidden;transition:transform .15s,border-color .15s;color:#fff;font-family:inherit}
+.rcard:hover,.rcard:focus-visible{transform:translateY(-3px);border-color:var(--rc);outline:none}
+.rcard:active{transform:translateY(0)}
+.rc-art{width:100%;height:auto;display:block;aspect-ratio:160/100}
+.rc-nm{display:flex;align-items:center;gap:8px;font-size:clamp(16px,2.6vw,24px);font-weight:700;margin-top:10px}
+.rc-lock .i{width:16px;height:16px;opacity:.75}
+.rc-note{font-size:clamp(11px,1.6vw,13px);color:#94a3b8;padding:0 10px;line-height:1.5;min-height:2.6em}
+.wl-foot{margin-top:clamp(12px,2.5vh,22px);color:#94a3b8;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px}
+.wl-foot .i{width:16px;height:16px}
+.wl-pw{max-width:360px;margin:0 auto;display:flex;flex-direction:column;gap:12px;align-items:center}
+.wl-pw .rc-art{width:200px;border-radius:14px;border:2px solid var(--rc)}
+.wl-pw .field{width:100%;text-align:center;font-size:20px;letter-spacing:.15em}
+.wl-pw .btns{display:flex;gap:10px;justify-content:center;width:100%}
+.wl-err{color:#fca5a5;font-size:14px}
+@media (max-width:640px),(max-height:430px){ .wl-cards{grid-template-columns:repeat(3,1fr);gap:8px} .rc-note{display:none} .rc-nm{font-size:15px;margin-top:6px} }
 #annotFreeze{position:fixed;inset:0;width:100%;height:100%;object-fit:fill;z-index:149;pointer-events:none;background:var(--bg)}
 #annotFreeze[hidden]{display:none}
 #board.annot-mode{position:fixed;inset:0;z-index:150;background:transparent;display:flex}
@@ -1121,12 +1156,15 @@ html.nocur,html.nocur *{cursor:none!important}
           <button class="nav-btn" data-sec="sound"><svg class="i" data-i="vol"></svg><span class="txt">الصوت والسطوع</span></button>
           <button class="nav-btn" data-sec="time"><svg class="i" data-i="globe"></svg><span class="txt">اللغة والوقت</span></button>
           <button class="nav-btn" data-sec="access"><svg class="i" data-i="eyedrop"></svg><span class="txt">سهولة الاستخدام</span></button>
+          <button class="nav-btn" data-sec="users"><svg class="i" data-i="users"></svg><span class="txt">المستخدمون</span></button>
           <button class="nav-btn" data-sec="security"><svg class="i" data-i="lock"></svg><span class="txt">الأمان والقفل</span></button>
           <button class="nav-btn" data-sec="power"><svg class="i" data-i="power"></svg><span class="txt">التشغيل والطاقة</span></button>
           <button class="nav-btn" data-sec="backup"><svg class="i" data-i="save"></svg><span class="txt">النسخ الاحتياطي والتحديث</span></button>
           <button class="nav-btn" data-sec="about"><svg class="i" data-i="info"></svg><span class="txt">حول النظام</span></button>
         </aside>
         <div class="main" id="setMain">
+
+          <div class="sec" data-sec="users" hidden></div>
 
           <div class="sec" data-sec="look">
             <h1 class="h1">الواجهة والألوان</h1><p class="sub">الوضع الليلي والصباحي، ألوان النظام، والخلفية.</p>
@@ -1392,6 +1430,8 @@ star2:'<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6
 function paintIcons(root=document){
   for(const el of root.querySelectorAll('svg[data-i]')){ el.setAttribute('viewBox','0 0 24 24'); el.innerHTML=ICONS[el.dataset.i]||''; el.removeAttribute('data-i'); }
 }
+ICONS.filePlus='<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 12v6M9 15h6"/>';
+ICONS.moveTo='<path d="M4 20V8a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M12 17v-6"/><path d="m9 14 3-3 3 3"/>';
 const icon=(n,a='')=>`<svg class="i" viewBox="0 0 24 24" ${a}>${ICONS[n]||''}</svg>`;
 
 /* ---------------- storage & settings ---------------- */
@@ -1400,7 +1440,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='1.8.5';
+const OS_VERSION='2.0.0';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -5782,6 +5822,39 @@ function patchFiles(){
     await N.refreshRoots(true); if(N.rootOf(NF.path||'').dev===dev||!N.roots.some(r=>NF.path&&NF.path.startsWith(r.path))) NF.path=N.roots[0].path; this.render();
   };
   Files.eject=function(){ const u=N.roots.find(r=>r.dev); if(u) this.ejectDev(u.dev); };
+  /* ---------- منتقي الوجهة: ينقل/ينسخ لأي مجلد بالجهاز أو بالفلاشة ---------- */
+  Files.pickDest=function(title){
+    let cur=NF.path||N.roots[0].path;
+    return modal({title,iconName:'folder',wide:true,
+      body:`<div class="dp"><div class="dp-crumbs" id="dpCrumbs"></div><div class="dp-list" id="dpList"></div>
+        <p class="hint" id="dpCur"></p></div>`,
+      actions:[{label:'إلغاء',val:null,cls:'ghost'},{label:'اختيار هذا المجلد',val:()=>cur,cls:'primary'}],
+      onOpen:(ov,done)=>{
+        const L=$('#dpList',ov), C=$('#dpCrumbs',ov), T=$('#dpCur',ov);
+        const draw=async()=>{
+          const r=N.rootOf(cur), rel=cur.slice(r.path.length).split('/').filter(Boolean);
+          const crumbs=[[r.path,r.dev?'فلاشة '+r.name:'الذاكرة الداخلية']]; let acc=r.path;
+          for(const x of rel){ acc+='/'+x; crumbs.push([acc,x]); }
+          C.innerHTML=N.roots.map(x=>`<button class="btn sm${N.rootOf(cur).path===x.path?' primary':''}" data-dproot="${esc(x.path)}">${icon(x.dev?'usb':'hdd')}${esc(x.dev?x.name:'الداخلية')}</button>`).join('')+
+            '<span class="sepc">›</span>'+crumbs.map(([pp,nm],i)=>`${i?'<span class="sepc">›</span>':''}<button class="dp-cr" data-dpgo="${esc(pp)}">${esc(nm)}</button>`).join('');
+          T.textContent='الوجهة: '+cur;
+          L.innerHTML='<div class="empty"><div class="spin"></div></div>';
+          let items=[];
+          try{ const j=await API.get('/api/fs/list?path='+encodeURIComponent(cur)); items=j.items.filter(x=>x.dir); }catch(e){}
+          L.innerHTML=(rel.length?`<button class="dp-row" data-dpgo="${esc(cur.slice(0,cur.lastIndexOf('/')))}">${icon('chevR')}<b>.. رجوع</b></button>`:'')+
+            (items.length?items.map(x=>`<button class="dp-row" data-dpgo="${esc(x.path)}">${icon('folder')}<b>${esc(x.name)}</b></button>`).join('')
+              :'<div class="empty" style="padding:18px">ماكو مجلدات فرعية — تكدر تختار هذا المجلد</div>');
+          paintIcons(L); paintIcons(C);
+        };
+        ov.addEventListener('click',e=>{
+          const g=e.target.closest('[data-dpgo]'), r2=e.target.closest('[data-dproot]');
+          if(r2){ cur=r2.dataset.dproot; draw(); return; }
+          if(g){ cur=g.dataset.dpgo; draw(); }
+        });
+        draw();
+      }});
+  };
+
   Files.renderMain=function(){
     const r=root(), rel=NF.path.slice(r.path.length).split('/').filter(Boolean);
     const crumbs=[[r.path,r.dev?'فلاشة '+r.name:'الذاكرة الداخلية']]; let acc=r.path; for(const s of rel){ acc+='/'+s; crumbs.push([acc,s]); }
@@ -5793,12 +5866,14 @@ function patchFiles(){
         <button class="icon-btn" data-nfx="view" title="طريقة العرض">${icon(NF.view==='grid'?'list':'apps')}</button>
         <button class="icon-btn${NF.selMode?' on':''}" data-nfx="select" title="تحديد">${icon('check')}</button>
         <button class="icon-btn" data-nfx="newdir" title="مجلد جديد">${icon('folderPlus')}</button>
+        <button class="icon-btn" data-nfx="newfile" title="ملف جديد">${icon('filePlus')}</button>
         <button class="icon-btn" data-nfx="refresh" title="تحديث">${icon('restart')}</button>
       </div><div class="${NF.view==='list'?'flist':''} ${NF.selMode?'selmode':''}"><div class="fgrid" id="fxGrid"></div></div>
       <div id="fxSelBar">${NF.selMode&&NF.sel.size?`<div class="selbar"><b>تم تحديد ${nf(NF.sel.size)}</b>
         ${NF.sel.size===1?`<button class="btn sm" data-nfx="open">${icon('doc')}فتح</button><button class="btn sm" data-nfx="rename">${icon('edit')}إعادة تسمية</button>`:''}
-        <button class="btn sm" data-nfx="copy" ${canOther?'':'disabled'}>${icon('copy')}نسخ إلى ${other}</button>
-        <button class="btn sm" data-nfx="move" ${canOther?'':'disabled'}>${icon('upload')}نقل إلى ${other}</button>
+        <button class="btn sm" data-nfx="copy">${icon('copy')}نسخ إلى…</button>
+        <button class="btn sm" data-nfx="move">${icon('moveTo')}نقل إلى…</button>
+        ${canOther?`<button class="btn sm ghost" data-nfx="quick" title="نسخ سريع">${icon('upload')}نسخ لـ${other}</button>`:''}
         <button class="btn sm danger" data-nfx="del">${icon('trash')}حذف</button></div>`:''}</div>`;
     const qi=$('#nfxQ'); let qt=0; qi.oninput=()=>{ clearTimeout(qt); qt=setTimeout(async()=>{ NF.q=qi.value.trim(); await Files.load(); Files.renderGrid(); },350); };
     this.renderGrid();
@@ -5822,14 +5897,21 @@ function patchFiles(){
         if(a==='view'){ NF.view=NF.view==='grid'?'list':'grid'; return this.renderMain(); }
         if(a==='select'){ NF.selMode=!NF.selMode; NF.sel.clear(); return this.renderMain(); }
         if(a==='refresh') return this.render();
-        if(a==='newdir'){ const n=await promptBox('اسم المجلد الجديد','مجلد جديد'); if(n){ await API.post('/api/fs/mkdir',{path:NF.path,name:n}); this.render(); } return; }
+        if(a==='newdir'){ const n=await promptBox('اسم المجلد الجديد','مجلد جديد'); if(n){ await API.post('/api/fs/mkdir',{path:NF.path,name:n}); this.render(); toast('تم إنشاء المجلد'); } return; }
+        if(a==='newfile'){ const n=await promptBox('اسم الملف الجديد','ملخص جديد.txt','مثال: ملخص الفصل الأول.txt');
+          if(n){ const r=await API.post('/api/fs/newfile',{path:NF.path,name:n}); this.render(); toast('تم إنشاء «'+r.name+'»'); } return; }
         if(a==='open'){ const it=NF.items.find(x=>x.path===sel[0]); NF.selMode=false; NF.sel.clear(); this.renderMain(); return this.openNode(it); }
         if(a==='rename'){ const it=NF.items.find(x=>x.path===sel[0]); const n=await promptBox('إعادة تسمية',it.name); if(n&&n!==it.name){ await API.post('/api/fs/rename',{path:it.path,name:n}); NF.sel.clear(); this.render(); toast('تمت إعادة التسمية'); } return; }
         if(a==='del'){ if(await confirmBox('حذف الملفات',`راح ينحذف ${nf(sel.length)} عنصر نهائياً.`,'حذف',true,'trash')){ await API.post('/api/fs/delete',{paths:sel}); NF.sel.clear(); this.render(); toast('تم الحذف'); } return; }
-        if(a==='copy'||a==='move'){
-          const r=root(), dest=r.dev?N.folders.docs:(N.roots.find(x=>x.dev)||{}).path; if(!dest) return toast('ماكو فلاشة',false);
-          const box=modal({title:a==='copy'?'جاري النسخ…':'جاري النقل…',iconName:'copy',body:'<div class="empty"><div class="spin"></div>انتظر لحد ما تخلص العملية</div>',actions:[]});
-          try{ await API.post('/api/fs/copy',{paths:sel,dest,move:a==='move'}); toast(a==='copy'?'تم النسخ':'تم النقل'); }
+        if(a==='copy'||a==='move'||a==='quick'){
+          const mv=a==='move';
+          let dest;
+          if(a==='quick'){ const r=root(); dest=r.dev?N.folders.docs:(N.roots.find(x=>x.dev)||{}).path; if(!dest) return toast('ماكو فلاشة',false); }
+          else dest=await this.pickDest(mv?'نقل إلى أي مجلد':'نسخ إلى أي مجلد');
+          if(!dest) return;
+          if(sel.some(p=>dest===p||dest.startsWith(p+'/'))) return toast('ما تكدر تنقل المجلد جوا نفسه',false);
+          modal({title:mv?'جاري النقل…':'جاري النسخ…',iconName:'copy',body:'<div class="empty"><div class="spin"></div>انتظر لحد ما تخلص العملية</div>',actions:[]});
+          try{ await API.post('/api/fs/copy',{paths:sel,dest,move:mv}); toast(mv?'تم النقل':'تم النسخ'); }
           finally{ $('#modalHost .overlay:last-child')?.remove(); }
           NF.sel.clear(); N.refreshRoots(true); return this.render();
         }
@@ -5901,6 +5983,252 @@ function patchStorage(){
     }catch(er){ toast(errMsg(er),false); }
   };
 }
+
+/* =====================================================================
+   المستخدمون: الطالب / الأستاذ / المطوّر
+   شاشة «مرحباً — منو يستخدم النظام؟» تطلع بكل إقلاع، وكل واجهة إلها صلاحياتها.
+   ملاحظة مهمة: هذا حاجز صف، مو حماية أمنية. من يوصل للتيرمنال أو SSH يتخطاه.
+   ===================================================================== */
+ICONS.users='<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.4"/><path d="M15.6 15.6A5.4 5.4 0 0 1 22 20"/>';
+ICONS.swap='<path d="M7 4 3 8l4 4"/><path d="M3 8h12a4 4 0 0 1 4 4"/><path d="m17 20 4-4-4-4"/><path d="M21 16H9a4 4 0 0 1-4-4"/>';
+ICONS.key='<circle cx="8" cy="15" r="4"/><path d="m10.9 12.1 8.1-8.1"/><path d="m16 7 2.5 2.5"/><path d="m13.5 9.5 2.5 2.5"/>';
+
+const ROLE_DEF={
+  student:{n:'الطالب', c:'#0d9488', c2:'#5eead4', pw:false,
+    /* قائمة مسموح بيها — أي شي مو مكتوب هنا مقفل */
+    apps:['board','pdf','files','word','ppt','excel','media','timer','settings'],
+    screens:['home','apps','board','pdf','files','office','media','timer','settings','gen'],
+    secs:['look','gallery','access'],
+    side:['files','board','shot','annot','close'],
+    note:'بدون إنترنت ولا تيرمنال ولا متجر، والإعدادات مظهر فقط'},
+  teacher:{n:'الأستاذ', c:'#9f1239', c2:'#fda4af', pw:true,
+    denyApps:['terminal'], denyScreens:['term'],
+    note:'كل شي مثل النظام الكامل، بدون التيرمنال'},
+  dev:{n:'المطوّر', c:'#1d4ed8', c2:'#93c5fd', pw:true,
+    note:'كل شي بدون أي قيد'},
+};
+const ROLE_ORDER=['student','teacher','dev'];
+
+/* الصورة: خلفية غامجة منقّطة ودائرة بلون الدور وجواها شخص — نفس ستايل الصور */
+function roleArt(k){
+  const d=ROLE_DEF[k], id='rp'+k;
+  return `<svg class="rc-art" viewBox="0 0 160 100" aria-hidden="true">
+    <defs><pattern id="${id}" width="7" height="7" patternUnits="userSpaceOnUse">
+      <circle cx="1.6" cy="1.6" r="1" fill="#fff" opacity=".08"/></pattern></defs>
+    <rect width="160" height="100" fill="#0e1116"/><rect width="160" height="100" fill="url(#${id})"/>
+    <circle cx="80" cy="50" r="30" fill="${d.c}"/>
+    <g fill="${d.c2}"><circle cx="80" cy="42.5" r="9"/>
+      <path d="M80 54.5c-9.2 0-16.6 6.2-18 14h36c-1.4-7.8-8.8-14-18-14Z"/></g></svg>`;
+}
+
+/* تجزئة كلمة المرور — ما نخزنها نص صريح */
+async function pwHash(v){
+  const t='alharthia:'+v;
+  try{
+    const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));
+    return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+  }catch(e){
+    let h=5381; for(let i=0;i<t.length;i++) h=((h<<5)+h+t.charCodeAt(i))|0;
+    return 'x'+(h>>>0).toString(16);
+  }
+}
+
+function pwPrompt(title,ph='كلمة المرور'){
+  return modal({title,iconName:'key',body:`<input class="field" id="pwIn" type="password" placeholder="${esc(ph)}" autocomplete="off">`,
+    actions:[{label:'إلغاء',val:null,cls:'ghost'},{label:'حفظ',val:ov=>$('#pwIn',ov).value||null,cls:'primary'}],
+    onOpen:(ov,done)=>{ const i=$('#pwIn',ov); i.focus();
+      if(S.osk&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
+      i.addEventListener('keydown',e=>{ if(e.key==='Enter') done(i.value||null); }); }});
+}
+
+const Role={
+  cur:'dev', asking:false, pwRole:null,
+  def(){ return ROLE_DEF[this.cur]||ROLE_DEF.dev; },
+  is(k){ return this.cur===k; },
+  pwOf(k){ const r=(S.rolePw||{})[k]; return r&&r.on&&r.h?r:null; },
+
+  canApp(id){ const d=this.def(); if(d.apps) return d.apps.includes(id); return !(d.denyApps||[]).includes(id); },
+  canScreen(id){ const d=this.def(); if(d.screens) return d.screens.includes(id); return !(d.denyScreens||[]).includes(id); },
+  canSec(id){ const d=this.def(); return d.secs?d.secs.includes(id):true; },
+
+  /* ---------- شاشة الاختيار ---------- */
+  ask(){
+    if(this.asking) return; this.asking=true; this.pwRole=null;
+    const el=$('#welcome'); el.hidden=false;
+    document.documentElement.classList.add('gated');
+    this.renderPick();
+  },
+  renderPick(){
+    $('#welcome').innerHTML=`<div class="wl-box">
+      <div class="wl-hd"><h1>مرحباً</h1><p>منو يستخدم النظام؟</p></div>
+      <div class="wl-cards">${ROLE_ORDER.map(k=>{ const d=ROLE_DEF[k], lk=!!this.pwOf(k);
+        return `<button class="rcard" data-role="${k}" style="--rc:${d.c}">
+          ${roleArt(k)}<span class="rc-nm">${d.n}${lk?`<span class="rc-lock" title="محمية بكلمة مرور">${icon('lock')}</span>`:''}</span>
+          <span class="rc-note">${d.note}</span></button>`; }).join('')}</div>
+      <p class="wl-foot">${icon('info')} تكدر تبدّل المستخدم بأي وقت من القائمة الجانبية.</p></div>`;
+    paintIcons($('#welcome'));
+  },
+  renderPw(k){
+    this.pwRole=k;
+    const d=ROLE_DEF[k];
+    $('#welcome').innerHTML=`<div class="wl-box">
+      <div class="wl-hd"><h1>${d.n}</h1><p>اكتب كلمة المرور</p></div>
+      <div class="wl-pw" style="--rc:${d.c}">${roleArt(k)}
+        <input id="wlPw" type="password" class="field" placeholder="كلمة المرور" autocomplete="off" inputmode="text">
+        <div class="wl-err" id="wlErr" hidden></div>
+        <div class="btns"><button class="btn ghost" data-wl="back">${icon('chevR')}رجوع</button>
+          <button class="btn primary" data-wl="ok">${icon('check')}دخول</button></div></div></div>`;
+    paintIcons($('#welcome'));
+    const i=$('#wlPw'); i.focus();
+    i.onkeydown=e=>{ if(e.key==='Enter') this.tryPw(k); };
+    if(S.osk&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
+  },
+  async tryPw(k){
+    const i=$('#wlPw'), er=$('#wlErr'); if(!i) return;
+    const h=await pwHash(i.value||'');
+    if(h===S.rolePw[k].h){ this.enter(k); return; }
+    er.hidden=false; er.textContent='كلمة المرور غلط'; i.value=''; i.focus(); beep(2,220);
+  },
+  enter(k){
+    this.cur=k; store.set('role',k);
+    this.asking=false;
+    if(typeof Keyboard!=='undefined'&&Keyboard.hide) Keyboard.hide();
+    $('#welcome').hidden=true; $('#welcome').innerHTML='';
+    document.documentElement.classList.remove('gated');
+    this.apply();
+    toast('أهلاً — واجهة '+ROLE_DEF[k].n);
+  },
+  /* أزرار تودّي لقسم مقفل: ما ننطيها تطلع أصلاً بدل ما تنضغط وتطلع رسالة منع */
+  sweep(root=document){
+    if(!this.def().apps&&!(this.def().denyScreens||[]).length) return;   // المطوّر: ماكو شي ينخفي
+    for(const b of $$('[data-go]',root)){
+      const id=b.dataset.go, sec=b.dataset.sec||b.dataset.arg;
+      const bad=!this.canScreen(id)||(id==='settings'&&sec&&!this.canSec(sec));
+      if(b.hidden!==bad) b.hidden=bad;
+    }
+    for(const b of $$('[data-app]',root)) { const bad=!this.canApp(b.dataset.app); if(b.hidden!==bad) b.hidden=bad; }
+  },
+  watch(){
+    if(this._ob) return;
+    let t=0;
+    this._ob=new MutationObserver(()=>{ cancelAnimationFrame(t); t=requestAnimationFrame(()=>this.sweep()); });
+    this._ob.observe($('#os'),{childList:true,subtree:true});
+  },
+
+  /* ---------- تطبيق الصلاحيات ---------- */
+  apply(){
+    const d=this.def();
+    document.documentElement.dataset.user=this.cur;   // مو data-role: closest() كان يلگيها ويبلع النقرات
+    // نخبر النظام حتى يمنع التشغيل فعلياً مو بس يخفي الأزرار
+    if(typeof Native!=='undefined'&&Native.on) API.post('/api/role',{role:this.cur}).catch(()=>{});
+    // قائمة الإعدادات
+    $$('#setNav .nav-btn').forEach(b=>{ b.hidden=!this.canSec(b.dataset.sec); });
+    const shown=$$('#setNav .nav-btn').filter(b=>!b.hidden);
+    if(current==='settings'){
+      const on=$('#setNav .nav-btn.on');
+      if((!on||on.hidden)&&shown[0]) showSec(shown[0].dataset.sec);
+    }
+    // لو المستخدم كان بشاشة ممنوعة
+    if(!this.canScreen(current)) go('home');
+    renderDock(); if(current==='apps') Apps.render();
+    if(typeof Side!=='undefined'&&Side.open) Side.show(Side.side);
+    this.sweep(); this.watch();
+  },
+  /* ---------- الربط ---------- */
+  init(){
+    if(!S.rolePw) S.rolePw={};
+    for(const k of ['teacher','dev']) if(!S.rolePw[k]) S.rolePw[k]={on:false,h:''};
+    // شاشة الاختيار
+    const el=document.createElement('div'); el.id='welcome'; el.hidden=true;
+    document.body.appendChild(el);
+    el.addEventListener('click',async e=>{
+      const r=e.target.closest('#welcome [data-role]');
+      if(r){ const k=r.dataset.role; if(this.pwOf(k)) this.renderPw(k); else this.enter(k); return; }
+      const b=e.target.closest('[data-wl]'); if(!b) return;
+      if(b.dataset.wl==='back'){ if(typeof Keyboard!=='undefined'&&Keyboard.hide) Keyboard.hide(); this.renderPick(); }
+      if(b.dataset.wl==='ok'&&this.pwRole) await this.tryPw(this.pwRole);
+    });
+
+    // منع الانتقال للشاشات المقفلة
+    const baseGo=go;
+    go=(id,arg)=>{ if(!Role.canScreen(id)){ toast('هذا القسم مو متاح بواجهة '+Role.def().n,false); return; } return baseGo(id,arg); };
+    // منع تشغيل البرامج المقفلة
+    if(typeof Apps!=='undefined'&&Apps.launch){
+      const baseLaunch=Apps.launch.bind(Apps);
+      Apps.launch=id=>{ if(!Role.canApp(id)){ toast('هذا البرنامج مو متاح بواجهة '+Role.def().n,false); return; } return baseLaunch(id); };
+    }
+    // إخفاء التطبيقات المقفلة من الشاشة الرئيسية وقائمة التطبيقات
+    const baseDock=renderDock;
+    renderDock=function(){ const keep=S.dock; S.dock=keep.filter(id=>Role.canApp(id)); baseDock(); S.dock=keep; };
+    const baseApps=Apps.render.bind(Apps);
+    Apps.render=function(){ const all=APPS_BUILTIN.slice();
+      APPS_BUILTIN.length=0; APPS_BUILTIN.push(...all.filter(a=>Role.canApp(a.id)));
+      try{ baseApps(); } finally{ APPS_BUILTIN.length=0; APPS_BUILTIN.push(...all); } };
+    // قائمة الإعدادات
+    const baseShow=showSec;
+    showSec=function(sec){ if(!Role.canSec(sec)){ const f=$$('#setNav .nav-btn').find(b=>Role.canSec(b.dataset.sec)); sec=f?f.dataset.sec:sec; } return baseShow(sec); };
+    // القائمة الجانبية: تبقى للكل، بس بدون الأزرار الي توديك لقسم مقفل
+    if(typeof Side!=='undefined'&&Side.mainTools){
+      const baseTools=Side.mainTools.bind(Side);
+      Side.mainTools=function(){ const d=Role.def();
+        let list=baseTools().filter(b=>b===null||!d.side||d.side.includes(b.k));
+        list=list.filter(b=>b===null||b.k!=='switch');
+        const i=list.findIndex(b=>b&&b.k==='close');
+        list.splice(i<0?list.length:i,0,{k:'switch',t:'تبديل المستخدم',i:'swap'});
+        // ما نخلي فاصلين ورا بعض
+        return list.filter((b,ix)=>!(b===null&&list[ix-1]===null));
+      };
+      const baseClick=Side.onClick.bind(Side);
+      Side.onClick=function(e){ const b=e.target.closest('[data-sb]');
+        if(b&&b.dataset.sb==='switch'){ this.hide(); Annot.exit(); Role.ask(); return; }
+        return baseClick(e); };
+    }
+  },
+};
+
+/* ---------- الإعدادات ← المستخدمون ---------- */
+Extra.secs.users=function(){
+  const mine=Role.cur, d=ROLE_DEF[mine];
+  if(mine==='student') return `<h1 class="h1">المستخدمون</h1><p class="sub">واجهة الطالب بدون كلمة مرور.</p>`;
+  // المطوّر يدير الاثنين، الأستاذ يدير واجهته بس
+  const list=mine==='dev'?['dev','teacher']:['teacher'];
+  const card=k=>{ const r=S.rolePw[k], on=!!(r&&r.on&&r.h), rd=ROLE_DEF[k];
+    return `<div class="card"><h3 style="--c:${rd.c}">${icon('key')}كلمة مرور واجهة ${rd.n}</h3>
+      <div class="row"><label for="pw_${k}">تفعيل كلمة المرور
+        <span class="hint">${on?'شغّالة — تنطلب كل ما تدخل هذه الواجهة':'مطفية — الدخول مباشرة بدون كلمة مرور'}</span></label>
+        <label class="sw"><input type="checkbox" id="pw_${k}" data-rpw="on" data-k="${k}" ${on?'checked':''}><span></span></label></div>
+      <div class="btns" style="margin-top:12px">
+        <button class="btn" data-rpw="set" data-k="${k}">${icon('edit')}${on?'تغيير كلمة المرور':'وضع كلمة مرور'}</button>
+        ${on?`<button class="btn danger" data-rpw="clear" data-k="${k}">${icon('trash')}إلغاء كلمة المرور</button>`:''}</div></div>`;
+  };
+  return `<h1 class="h1">المستخدمون</h1>
+    <p class="sub">إنت داخل بواجهة <b>${d.n}</b>. ${d.note}.</p>
+    ${list.map(card).join('')}
+    <div class="card"><h3>${icon('swap')}تبديل المستخدم</h3>
+      <p class="hint">ترجع لشاشة «منو يستخدم النظام؟» بدون إعادة تشغيل. وهي تطلع لحالها بكل إقلاع.</p>
+      <div class="btns" style="margin-top:12px"><button class="btn primary" data-rpw="switch">${icon('swap')}تبديل المستخدم</button></div></div>
+    <div class="card"><p class="hint">${icon('info')} كلمة المرور حاجز صف حتى ما يعبث الطلاب بالإعدادات — مو حماية أمنية.
+      من عنده وصول للتيرمنال أو SSH على الجهاز يكدر يتخطاها.</p></div>`;
+};
+
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-rpw]'); if(!b) return;
+  const a=b.dataset.rpw, k=b.dataset.k;
+  if(a==='switch'){ Role.ask(); return; }
+  if(a==='clear'){
+    if(await confirmBox('إلغاء كلمة المرور','واجهة '+ROLE_DEF[k].n+' راح تنفتح بدون كلمة مرور.','إلغاء الكلمة',true,'trash')){
+      S.rolePw[k]={on:false,h:''}; save(); Extra.renderSec('users'); toast('تم إلغاء كلمة المرور'); }
+    return;
+  }
+  if(a==='set'||a==='on'){
+    if(a==='on'&&!b.checked){ S.rolePw[k].on=false; save(); Extra.renderSec('users'); toast('تم إيقاف كلمة المرور'); return; }
+    const v=await pwPrompt('كلمة مرور واجهة '+ROLE_DEF[k].n);
+    if(!v){ Extra.renderSec('users'); return; }
+    const v2=await pwPrompt('أعد كتابة كلمة المرور');
+    if(v2!==v){ toast('الكلمتين مو نفسها',false); Extra.renderSec('users'); return; }
+    S.rolePw[k]={on:true,h:await pwHash(v)}; save(); Extra.renderSec('users'); toast('تم حفظ كلمة المرور');
+  }
+});
 
 /* =====================================================================
    ON-SCREEN KEYBOARD (Gboard style) — Arabic / English / French
@@ -6486,8 +6814,11 @@ function tick(){
   renderDock();
   Keyboard.init(); Media.init(); AudioOut.init(); Term.init(); Side.init(); Cast.init(); Lang.apply(true);
   Native.init();
+  Role.init();
   const m=$('#sysMsg'); $('#sysTxt').textContent='جاري التشغيل…'; m.hidden=false; if(S.bootSound) setTimeout(()=>beep(1,523),200);
-  setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); if(S.lockOnStart) lockNow(); },700);
+  setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); if(S.lockOnStart) lockNow();
+    Role.ask();   // «مرحباً — منو يستخدم النظام؟» بكل إقلاع
+  },700);
 })();
 </script>
 </body>
