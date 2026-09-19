@@ -239,6 +239,13 @@ html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
 .tb-chip.dl{background:color-mix(in srgb,#2563eb 22%,transparent);color:#93b4fd}
 .tb-chip.dl span{font-variant-numeric:tabular-nums;font-weight:700}
 .tb-chip.dl.done{background:color-mix(in srgb,var(--ok) 22%,transparent);color:var(--ok)}
+.cast-log{margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--surface-2);font-size:13px}
+.cast-log summary{cursor:pointer;color:var(--text-2);display:flex;align-items:center;gap:8px;list-style:none}
+.cast-log summary::-webkit-details-marker{display:none}
+.cast-log table{width:100%;margin-top:10px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.cast-log td{padding:5px 6px;border-top:1px solid var(--line);color:var(--text-2);white-space:nowrap}
+.cast-log td.ok{color:var(--ok);font-weight:700}
+.cast-log td.bad{color:var(--danger);font-weight:700}
 .cast-state{margin-top:14px;padding:13px 15px;border-radius:14px;background:var(--surface-2);color:var(--text-2);font-size:14px;line-height:1.8;display:flex;align-items:flex-start;gap:9px}
 .cast-state.ok{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
 .cast-state.warn{background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn)}

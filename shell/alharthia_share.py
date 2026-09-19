@@ -21,7 +21,7 @@ IN_TIMEOUT = 6              # seconds without an incoming frame = sender stopped
 STATE = {
     "srv": None, "thread": None, "on": False, "key": "", "pin": "",
     "viewers": {}, "frame": b"", "frame_t": 0.0, "lock": threading.Lock(),
-    "in_frame": b"", "in_t": 0.0, "in_name": "", "in_count": 0, "in_err": "",
+    "in_frame": b"", "in_t": 0.0, "in_name": "", "in_count": 0, "in_err": "", "hits": [],
 }
 
 
@@ -194,6 +194,7 @@ def status():
         "https": bool(TLS["srv"]), "httpsPort": HTTPS_PORT,
         "sendUrl": f"https://{lan_ip()}:{HTTPS_PORT}/send?k={STATE['key']}" if (STATE["on"] and TLS["srv"]) else "",
         "airplay": airplay_status(), "airplayErr": AIR["err"],
+        "hits": [dict(x, ago=round(now - x["t"], 1)) for x in STATE["hits"][-6:]][::-1],
     }
 
 
@@ -211,14 +212,18 @@ small{color:#7e8db0;display:block;margin-top:18px;line-height:1.9}
 </style></head><body><div class="card">
 <h1>Alharthia OS</h1><p>اعرض شاشة جهازك على شاشة الصف</p>
 <button class="btn" id="sendBtn">🖥️ شارك شاشتك مع شاشة الصف</button>
-<small>مشاركة الشاشة تحتاج متصفح <b>كمبيوتر</b> (Chrome أو Edge).<br>
+<div id="warn" hidden style="margin-top:14px;padding:14px;border-radius:14px;background:#3b1111;border:1px solid #7f1d1d;color:#fca5a5;line-height:1.8"></div>
+<small>مشاركة الشاشة تحتاج متصفح <b>كمبيوتر</b> (Chrome أو Firefox أو Edge).<br>
 الهواتف ما تكدر تشارك شاشتها من المتصفح — الآيفون يستخدم AirPlay، والأندرويد يستخدم تطبيق «بث الحارثية».</small>
 </div>
 <script>
+var SU='%SENDURL%';
+if(!window.isSecureContext && SU.indexOf('https')!==0){
+  var w=document.getElementById('warn'); w.hidden=false;
+  w.innerHTML='<b>الرابط الآمن مو جاهز</b><br>نفّذ على جهاز الصف: <code dir="ltr">sudo apt install -y openssl</code> وبعدها أطفي المشاركة وشغّلها من جديد.';
+}
 document.getElementById('sendBtn').onclick=function(){
-  var u='/send?k=KEY';
-  if(!window.isSecureContext && '%SENDURL%'.indexOf('https')===0) u='%SENDURL%';
-  location.href=u;
+  location.href=(!window.isSecureContext && SU.indexOf('https')===0) ? SU : '/send?k=KEY';
 };
 </script>
 </body></html>"""
@@ -269,10 +274,18 @@ function why(){
     off(); return true;
   }
   if(!window.isSecureContext){
-    box.innerHTML='<b>لازم تفتح الرابط الآمن أولاً</b><br>'+
-      '<span class="sub">المتصفح ما يسمح بمشاركة الشاشة إلا على https. اضغط الزر، وإذا طلعت صفحة تحذير اضغط '+
-      '<b>Advanced</b> ثم <b>Proceed</b> (الشهادة محلية ومالت جهاز الصف).</span>'+
-      '<div style="margin-top:14px"><a class="lnk" href="'+SENDURL+'">🔒 افتح الرابط الآمن</a></div>';
+    if(SENDURL.indexOf('https')!==0){
+      box.innerHTML='<b>الرابط الآمن مو جاهز على جهاز الصف</b><br>'+
+        '<span class="sub">المتصفحات ما تسمح بمشاركة الشاشة إلا على https. نفّذ على جهاز الصف:<br>'+
+        '<code style="display:block;background:#0c1222;padding:10px;border-radius:8px;margin-top:8px" dir="ltr">sudo apt install -y openssl</code>'+
+        'وبعدها أطفي المشاركة وشغّلها من جديد.</span>';
+    }else{
+      box.innerHTML='<b>لازم تفتح الرابط الآمن أولاً</b><br>'+
+        '<span class="sub">المتصفح ما يسمح بمشاركة الشاشة إلا على https. اضغط الزر، وإذا طلعت صفحة تحذير اضغط '+
+        '<b>Advanced</b> (أو «متقدم») ثم <b>Proceed / Accept the Risk</b> — الشهادة محلية ومالت جهاز الصف.</span>'+
+        '<div style="margin-top:14px"><a class="lnk" href="'+SENDURL+'">🔒 افتح الرابط الآمن</a></div>'+
+        '<p class="sub" style="margin-top:12px">أو انسخ هذا العنوان للمتصفح:<br><b dir="ltr" style="word-break:break-all">'+SENDURL+'</b></p>';
+    }
     off(); return true;
   }
   if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){
@@ -340,8 +353,19 @@ go.onclick=()=>stream?stop():start();
 </script></body></html>"""
 
 
+def note_hit(ip, what, code, tls=False):
+    """نسجّل كل طلب يوصل الجهاز حتى نعرف وين تنقطع السلسلة."""
+    with STATE["lock"]:
+        h = STATE["hits"]
+        h.append({"ip": ip, "what": what, "code": code, "tls": tls, "t": time.time()})
+        del h[:-12]
+
+
 class ShareHandler(BaseHTTPRequestHandler):
     server_version = "AlharthiaShare/1.0"
+
+    def is_tls(self):
+        return getattr(self.connection, "context", None) is not None
 
     def log_message(self, *a):
         if os.environ.get("ALH_DEBUG"):
@@ -366,6 +390,7 @@ class ShareHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def deny(self, code=403, msg="رابط غير صالح — افتح الرابط من شاشة الصف"):
+        note_hit(self.client_address[0], self.command + " " + self.path.split("?")[0], code, self.is_tls())
         data = f"<meta charset=utf-8><body style='font:16px system-ui;padding:40px;text-align:center'>{html.escape(msg)}".encode()
         self.send_response(code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -379,6 +404,7 @@ class ShareHandler(BaseHTTPRequestHandler):
             return self.deny(503, "مشاركة الشاشة مطفأة على جهاز الصف")
         if not self.key_ok():
             return self.deny()
+        note_hit(self.client_address[0], "GET " + path, 200, self.is_tls())
         if path in ("/", "/index.html"):
             return self.html(PAGE_HOME)
         if path in ("/send", "/view"):          # /view القديم يروح لصفحة المشاركة
@@ -403,6 +429,7 @@ class ShareHandler(BaseHTTPRequestHandler):
                 STATE["in_frame"], STATE["in_t"] = data, time.time()
                 STATE["in_name"] = (q.get("name") or ["جهاز"])[0][:40]
                 STATE["in_count"] += 1
+        note_hit(self.client_address[0], "POST /frame", 204, self.is_tls())
         self.send_response(204)
         self.send_header("Content-Length", "0")
         self.end_headers()
@@ -470,6 +497,7 @@ def start():
     t.start()
     STATE["thread"] = t
     STATE["in_count"] = 0
+    STATE["hits"] = []
     try:
         start_tls()
     except Exception:  # noqa

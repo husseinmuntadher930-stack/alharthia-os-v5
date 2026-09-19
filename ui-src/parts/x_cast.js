@@ -34,7 +34,7 @@ const Cast={
   render(force){
     const m=$('#castMain'); if(!m) return;
     const s=this.st||{};
-    const sig=JSON.stringify([s.on,s.url,s.incoming,s.from,s.frames,s.airplay,s.airplayErr,s.https,s.pin]);
+    const sig=JSON.stringify([s.on,s.url,s.incoming,s.from,s.frames,s.airplay,s.airplayErr,s.https,s.sendUrl,s.pin,(s.hits||[]).length,(s.hits||[])[0]]);
     if(!force&&sig===this.sig){ if(s.incoming) this.tickImg($('#castImg')); return; }
     this.sig=sig;
     const on=!!s.on, url=s.url||'', ap=s.airplay||'missing';
@@ -48,6 +48,10 @@ const Cast={
             <div class="cast-qr"><canvas id="castQR"></canvas>
               <div class="qr-tip">${icon('qr')} صوّب كاميرا الهاتف على الرمز، أو اكتب العنوان بالمتصفح.</div></div>
             <div class="btns" style="margin-top:12px"><button class="btn sm" data-cast="copy">${icon('copy')}نسخ العنوان</button></div></div>
+          ${s.sendUrl?`<div class="cast-url" style="margin-top:10px"><span class="hint">أو افتح الرابط الآمن مباشرة (أسرع — يتخطى خطوة التحويل):</span>
+              <b dir="ltr" style="font-size:clamp(15px,2.2vw,20px)">${esc(s.sendUrl)}</b>
+              <div class="btns" style="margin-top:10px"><button class="btn sm" data-cast="copySec">${icon('copy')}نسخ الرابط الآمن</button></div></div>`
+            :`<p class="hint" style="color:var(--warn)">${icon('info')} الرابط الآمن مو جاهز — نفّذ <b dir="ltr">sudo apt install -y openssl</b> وبعدها أطفي المشاركة وشغّلها.</p>`}
 
           <ol class="cast-steps"><li>افتح العنوان بمتصفح <b>كمبيوتر</b> (Chrome أو Edge).</li>
             <li>اضغط «شارك شاشتك مع شاشة الصف» — راح ينقلك لرابط آمن https.</li>
@@ -55,6 +59,11 @@ const Cast={
             <li>اختار الشاشة أو النافذة.</li></ol>
           ${s.https===false?`<p class="hint" style="color:var(--warn)">${icon('info')} الرابط الآمن ما اشتغل — نفّذ: sudo apt install openssl</p>`:''}
 
+          ${(s.hits&&s.hits.length)?`<details class="cast-log"><summary>${icon('info')} سجل الاتصالات (${nf(s.hits.length)})</summary>
+            <table>${s.hits.map(x=>`<tr><td dir="ltr">${esc(x.ip)}</td><td dir="ltr">${esc(x.what)}</td>
+              <td class="${x.code<300?'ok':'bad'}">${x.code}</td><td>${x.tls?'🔒':'—'}</td><td>قبل ${nf(Math.round(x.ago))} ث</td></tr>`).join('')}</table>
+            <p class="hint">إذا ماكو ولا سطر، يعني اللابتوب ما وصل للجهاز أصلاً. إذا فيه سطر برمز <b>403</b> يعني الرمز غلط.</p></details>`
+            :on?`<p class="hint" style="color:var(--warn)">${icon('info')} ما وصل ولا اتصال من أي جهاز — تأكد إن اللابتوب على نفس الشبكة وفتح العنوان فعلاً.</p>`:''}
           <div class="cast-state ${s.incoming?'ok':s.frames?'warn':''}">
             ${s.incoming?`${icon('check')} تستقبل الآن من <b>${esc(s.from||'جهاز')}</b> · ${nf(s.frames||0)} إطار`
               :s.frames?`${icon('info')} وصلت ${nf(s.frames)} إطار وبعدين توقفت${s.ago!=null?` (آخر إطار قبل ${nf(Math.round(s.ago))} ثانية)`:''}`
@@ -102,7 +111,8 @@ const Cast={
     document.addEventListener('click',async e=>{
       const b=e.target.closest('[data-cast]'); if(!b) return;
       const a=b.dataset.cast;
-      if(a==='copy'){ try{ await navigator.clipboard.writeText(this.st.url); toast('تم نسخ العنوان'); }catch(er){ toast('انسخه يدوياً',false); } }
+      if(a==='copy'||a==='copySec'){ const u=a==='copySec'?this.st.sendUrl:this.st.url;
+        try{ await navigator.clipboard.writeText(u); toast('تم نسخ العنوان'); }catch(er){ toast('انسخه يدوياً',false); } }
       if(a==='full') this.openFull();
       if(a==='exitFull') this.closeFull();
     });

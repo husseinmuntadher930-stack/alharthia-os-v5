@@ -8,7 +8,7 @@ apt-get install -y --no-install-recommends \
 	labwc python3 network-manager bluez bluez-obexd dbus-user-session udisks2 \
 	exfatprogs dosfstools plymouth plymouth-themes \
 	fonts-noto-core fonts-noto-color-emoji pipewire wireplumber pipewire-pulse \
-	libgl1-mesa-dri libegl1 libgles2 xdg-utils sudo rfkill foot wtype grim mpv pulseaudio-utils ffmpeg git ca-certificates unzip \
+	libgl1-mesa-dri libegl1 libgles2 xdg-utils sudo rfkill foot wtype grim mpv pulseaudio-utils ffmpeg git ca-certificates unzip openssl \
 	python3-gi python3-dbus gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 \
 	chromium libreoffice-writer libreoffice-calc libreoffice-impress
 
