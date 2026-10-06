@@ -365,7 +365,11 @@ html.gated #osk{z-index:260}
 .rcard:active{transform:translateY(0)}
 .rc-art{width:100%;height:auto;display:block;aspect-ratio:160/100}
 .rc-nm{display:flex;align-items:center;gap:8px;font-size:clamp(16px,2.6vw,24px);font-weight:700;margin-top:10px}
-.rc-lock .i{width:16px;height:16px;opacity:.75}
+.rc-lock{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:color-mix(in srgb,var(--rc) 30%,transparent);color:#fff}
+.rc-lock .i{width:16px;height:16px}
+.rcard{position:relative}
+.rc-badge{position:absolute;top:10px;left:10px;z-index:1;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:rgba(0,0,0,.55);color:#fff;font-size:20px;box-shadow:0 0 0 2px var(--rc)}
+html.locked #sideWrap{display:none}
 .rc-note{font-size:clamp(11px,1.6vw,13px);color:#94a3b8;padding:0 10px;line-height:1.5;min-height:2.6em}
 .wl-foot{margin-top:clamp(12px,2.5vh,22px);color:#94a3b8;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px}
 .wl-foot .i{width:16px;height:16px}

@@ -186,12 +186,10 @@ const Extra={
       </div>`;
     },
     security(){
-      return `<h1 class="h1">الأمان والقفل</h1><p class="sub">رمز PIN يحمي الجهاز والإعدادات من التغيير.</p>
-      <div class="card"><h3>${icon('lock')}رمز القفل (PIN)</h3>
-        <div class="row"><span class="lbl">الحالة<span class="hint">${S.pin?'رمز مكوّن من ٤ أرقام مفعّل':'ماكو رمز — أي أحد يكدر يفتح القفل'}</span></span>
-          ${S.pin?`<button class="btn" data-x="pinChange">${icon('edit')}تغيير الرمز</button><button class="btn danger" data-x="pinRemove">${icon('trash')}إزالة</button>`:`<button class="btn primary" data-x="pinSet">${icon('lock')}تعيين رمز</button>`}</div>
-        ${S.pin?sw('lockOnStart','قفل الشاشة عند التشغيل')+sw('lockSettings','طلب الرمز لفتح الإعدادات','حتى الطلاب ما يغيرون الإعدادات')+sw('lockStore','طلب الرمز لتثبيت أو إزالة البرامج'):'<p class="hint">عيّن رمز حتى تظهر خيارات الحماية.</p>'}
-        <div class="row"><span class="lbl">قفل الشاشة الآن</span><button class="btn" data-x="lockNow">${icon('lock')}قفل</button></div>
+      return `<h1 class="h1">الأمان والقفل</h1><p class="sub">كل مستخدم إله قفله الخاص. الطالب ما عنده قفل.</p>
+      ${Role.lockCard(Role.cur)}
+      <div class="card"><h3>${icon('lock')}قفل الشاشة</h3>
+        <div class="row"><span class="lbl">قفل الشاشة الآن<span class="hint">${Role.pwOf(Role.cur)?'تنفتح بكلمة مرور '+ROLE_DEF[Role.cur].n:'ماكو قفل لهذا المستخدم — تنفتح باللمس'}</span></span><button class="btn" data-x="lockNow">${icon('lock')}قفل</button></div>
       </div>
       <div class="card"><h3>${icon('shield')}الخصوصية</h3>
         <div class="row"><span class="lbl">سجل المتصفح والملفات الأخيرة</span><button class="btn" data-x="clearHist">${icon('clean')}مسح</button></div>
@@ -272,12 +270,6 @@ const Extra={
         else Gallery.use(id,a);
         return; }
       const b=e.target.closest('[data-x]'); if(!b||b.tagName==='INPUT') return; const a=b.dataset.x;
-      if(a==='pinSet'||a==='pinChange'){
-        if(a==='pinChange'&&!await pinPad('أدخل الرمز الحالي')) return;
-        const p1=await pinPad('اختر رمز جديد (٤ أرقام)',false); if(!p1) return;
-        const p2=await pinPad('أعد إدخال الرمز',false); if(p2!==p1){ toast('الرمزين مو متطابقين',false); return; }
-        S.pin=p1; save('تم تعيين الرمز'); this.renderSec('security'); }
-      if(a==='pinRemove'){ if(!await pinPad('أدخل الرمز للإزالة')) return; S.pin=null; S.lockSettings=S.lockStore=S.lockOnStart=false; save('تمت إزالة الرمز'); this.renderSec('security'); }
       if(a==='lockNow') lockNow();
       if(a==='clearHist') toast('تم مسح السجل');
       if(a==='factory'){ if(await confirmBox('إعادة ضبط المصنع','راح تنحذف كل الإعدادات والسبورات والملفات والصور والبرامج المثبتة.','إعادة الضبط',true,'restart')){ try{ Object.keys(localStorage).filter(k=>k.startsWith('alharthia.')).forEach(k=>localStorage.removeItem(k)); }catch(_){} sysMessage('جاري إعادة ضبط النظام…',null,()=>location.reload()); } }
@@ -291,16 +283,7 @@ const Extra={
       if(a==='resetSettings'){ if(await confirmBox('إرجاع الإعدادات','كل الإعدادات ترجع للأصل (الملفات والسبورات تبقى).','إرجاع',true,'restart')){ const keep={installed:S.installed}; Object.keys(S).forEach(k=>delete S[k]); Object.assign(S,structuredClone(DEF),keep); store.set('settings',S); location.reload(); } }
       if(a==='checkUpd'){ await Files.progress('جاري البحث عن تحديثات…',200*MB); toast('النظام محدَّث لآخر إصدار'); }
     });
-    // settings / store protection
-    const baseGo=go;
-    let unlocked=false;
-    go=async function(id,arg){
-      if(id==='settings'&&current!=='settings'&&S.pin&&S.lockSettings&&!unlocked){ if(!await pinPad('أدخل الرمز لفتح الإعدادات')) return; unlocked=true; setTimeout(()=>unlocked=false,5*60e3); }
-      baseGo(id,arg);
-    };
-    const inst=Store.install.bind(Store), rm=Store.remove.bind(Store);
-    Store.install=async id=>{ if(S.pin&&S.lockStore&&!await pinPad('أدخل الرمز للتثبيت')) return; inst(id); };
-    Store.remove=async id=>{ if(S.pin&&S.lockStore&&!await pinPad('أدخل الرمز للإزالة')) return; await rm(id); };
+    // الحماية صارت لكل مستخدم (Role): الطالب ممنوع من الإعدادات الحساسة والمتجر أصلاً
     // click sound
     document.addEventListener('pointerdown',e=>{ if(S.clickSound&&e.target.closest('button')) tickSound(); },true);
     // auto power-off + night light schedule

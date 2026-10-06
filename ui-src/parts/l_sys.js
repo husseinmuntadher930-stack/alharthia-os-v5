@@ -218,8 +218,9 @@ function renderAbout(){
 /* =====================================================================
    POWER / LOCK / KEYBOARD / BOOT
    ===================================================================== */
-function lockNow(){ layoutAll(); $('#lock').hidden=false; }
-$('#lock').onclick=async()=>{ if(S.pin&&!await pinPad('أدخل رمز القفل')) return; $('#lock').hidden=true; lastAct=Date.now(); };
+function lockNow(){ layoutAll(); Role.lockHint(); $('#lock').hidden=false; document.documentElement.classList.add('locked'); }
+function unlockDone(){ $('#lock').hidden=true; document.documentElement.classList.remove('locked'); lastAct=Date.now(); }
+$('#lock').onclick=async()=>{ if(Role.unlocking) return; if(await Role.unlock()) unlockDone(); };
 /* شاشة الإطفاء / إعادة التشغيل: الشعار + نص إنكليزي، وتبقى ظاهرة لحد ما ينطفي الجهاز.
    after==='hold' يعني لا تنزل الشاشة أبداً (بالمعاينة فقط تنسد باللمس، بدون أي نص). */
 function sysMessage(txt,after,cb){
@@ -299,7 +300,7 @@ function tick(){
   Native.init(); CamAssist.init();
   Role.init();
   const m=$('#sysMsg'); $('#sysTxt').textContent='جاري التشغيل…'; m.hidden=false; if(S.bootSound) setTimeout(()=>beep(1,523),200);
-  setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); if(S.lockOnStart) lockNow();
+  setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); 
     Role.ask();   // «مرحباً — منو يستخدم النظام؟» بكل إقلاع
   },700);
 })();

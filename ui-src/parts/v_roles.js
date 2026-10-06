@@ -77,8 +77,9 @@ const Role={
     $('#welcome').innerHTML=`<div class="wl-box">
       <div class="wl-hd"><h1>مرحباً</h1><p>منو يستخدم النظام؟</p></div>
       <div class="wl-cards">${ROLE_ORDER.map(k=>{ const d=ROLE_DEF[k], lk=!!this.pwOf(k);
-        return `<button class="rcard" data-role="${k}" style="--rc:${d.c}">
-          ${roleArt(k)}<span class="rc-nm">${d.n}${lk?`<span class="rc-lock" title="محمية بكلمة مرور">${icon('lock')}</span>`:''}</span>
+        return `<button class="rcard${lk?' locked':''}" data-role="${k}" style="--rc:${d.c}">
+          ${lk?`<span class="rc-badge" title="مقفل بكلمة مرور">${icon('lock')}</span>`:''}
+          ${roleArt(k)}<span class="rc-nm">${d.n}${lk?`<span class="rc-lock" title="مقفل بكلمة مرور">${icon('lock')}</span>`:''}</span>
           <span class="rc-note">${d.note}</span></button>`; }).join('')}</div>
       <p class="wl-foot">${icon('info')} تكدر تبدّل المستخدم بأي وقت من القائمة الجانبية.</p></div>${this.kbdBtn()}`;
     paintIcons($('#welcome')); this.kbdSync();
@@ -172,6 +173,9 @@ const Role={
   init(){
     if(!S.rolePw) S.rolePw={};
     for(const k of ['teacher','dev']) if(!S.rolePw[k]) S.rolePw[k]={on:false,h:''};
+    delete S.rolePw.student;
+    // الرمز العام القديم (PIN للكل) انلغى — القفل صار لكل مستخدم
+    if(S.pin||S.lockOnStart||S.lockSettings||S.lockStore){ S.pin=null; S.lockOnStart=S.lockSettings=S.lockStore=false; save(); }
     // شاشة الاختيار
     const el=document.createElement('div'); el.id='welcome'; el.hidden=true;
     document.body.appendChild(el);
@@ -225,28 +229,57 @@ const Role={
 };
 
 /* ---------- الإعدادات ← المستخدمون ---------- */
+/* بطاقة «قفل حسابي»: كل مستخدم يدير قفله بس — الطالب ما عنده قفل */
+Role.lockCard=function(k){
+  if(k==='student') return `<div class="card"><h3>${icon('lock')}القفل</h3><p class="hint">واجهة الطالب ما بيها قفل — تنفتح مباشرة.</p></div>`;
+  const r=S.rolePw[k], on=!!(r&&r.on&&r.h), rd=ROLE_DEF[k];
+  return `<div class="card"><h3 style="--c:${rd.c}">${icon('lock')}قفل ${rd.n}</h3>
+    <div class="row"><label for="pw_${k}">تفعيل القفل
+      <span class="hint">${on?'شغّال — يطلب كلمة المرور لما تختار '+rd.n+' بشاشة المستخدمين، ولما تفتح قفل الشاشة':'مطفي — '+rd.n+' تنفتح بدون كلمة مرور'}</span></label>
+      <label class="sw"><input type="checkbox" id="pw_${k}" data-rpw="on" data-k="${k}" ${on?'checked':''}><span></span></label></div>
+    <div class="btns" style="margin-top:12px">
+      <button class="btn" data-rpw="set" data-k="${k}">${icon('edit')}${on?'تغيير كلمة المرور':'وضع كلمة مرور'}</button>
+      ${on?`<button class="btn danger" data-rpw="clear" data-k="${k}">${icon('trash')}إلغاء القفل</button>`:''}</div></div>`;
+};
 Extra.secs.users=function(){
   const mine=Role.cur, d=ROLE_DEF[mine];
-  if(mine==='student') return `<h1 class="h1">المستخدمون</h1><p class="sub">واجهة الطالب بدون كلمة مرور.</p>`;
-  // المطوّر يدير الاثنين، الأستاذ يدير واجهته بس
-  const list=mine==='dev'?['dev','teacher']:['teacher'];
-  const card=k=>{ const r=S.rolePw[k], on=!!(r&&r.on&&r.h), rd=ROLE_DEF[k];
-    return `<div class="card"><h3 style="--c:${rd.c}">${icon('key')}كلمة مرور واجهة ${rd.n}</h3>
-      <div class="row"><label for="pw_${k}">تفعيل كلمة المرور
-        <span class="hint">${on?'شغّالة — تنطلب كل ما تدخل هذه الواجهة':'مطفية — الدخول مباشرة بدون كلمة مرور'}</span></label>
-        <label class="sw"><input type="checkbox" id="pw_${k}" data-rpw="on" data-k="${k}" ${on?'checked':''}><span></span></label></div>
-      <div class="btns" style="margin-top:12px">
-        <button class="btn" data-rpw="set" data-k="${k}">${icon('edit')}${on?'تغيير كلمة المرور':'وضع كلمة مرور'}</button>
-        ${on?`<button class="btn danger" data-rpw="clear" data-k="${k}">${icon('trash')}إلغاء كلمة المرور</button>`:''}</div></div>`;
-  };
+  const t=S.rolePw.teacher, tOn=!!(t&&t.on&&t.h);
   return `<h1 class="h1">المستخدمون</h1>
     <p class="sub">إنت داخل بواجهة <b>${d.n}</b>. ${d.note}.</p>
-    ${list.map(card).join('')}
+    ${Role.lockCard(mine)}
+    ${mine==='dev'&&tOn?`<div class="card"><h3>${icon('key')}الأستاذ نسى كلمة المرور؟</h3>
+      <p class="hint">تكدر تلغي قفل الأستاذ من هنا، وهو يحط كلمة جديدة من إعداداته.</p>
+      <div class="btns" style="margin-top:12px"><button class="btn danger" data-rpw="clear" data-k="teacher">${icon('trash')}إلغاء قفل الأستاذ</button></div></div>`:''}
     <div class="card"><h3>${icon('swap')}تبديل المستخدم</h3>
-      <p class="hint">ترجع لشاشة «منو يستخدم النظام؟» بدون إعادة تشغيل. وهي تطلع لحالها بكل إقلاع.</p>
+      <p class="hint">ترجع لشاشة «منو يستخدم النظام؟» — المستخدم المقفل تطلع يمّه علامة قفل.</p>
       <div class="btns" style="margin-top:12px"><button class="btn primary" data-rpw="switch">${icon('swap')}تبديل المستخدم</button></div></div>
-    <div class="card"><p class="hint">${icon('info')} كلمة المرور حاجز صف حتى ما يعبث الطلاب بالإعدادات — مو حماية أمنية.
-      من عنده وصول للتيرمنال أو SSH على الجهاز يكدر يتخطاها.</p></div>`;
+    <div class="card"><p class="hint">${icon('info')} القفل حاجز صف حتى ما يعبث الطلاب بالإعدادات — مو حماية أمنية.
+      من عنده وصول للتيرمنال أو SSH على الجهاز يكدر يتخطاه.</p></div>`;
+};
+Role.reSec=function(){ for(const s of ['users','security']){ const el=$(`#setMain .sec[data-sec=${s}]`); if(el&&!el.hidden) Extra.renderSec(s); } };
+/* فتح قفل الشاشة: بكلمة مرور المستخدم الحالي، والطالب يفتح باللمس */
+Role.lockHint=function(){
+  const h=$('#lockHint'); if(!h) return; const k=this.cur, d=ROLE_DEF[k], lk=!!this.pwOf(k);
+  h.innerHTML=`${icon('lock')}${lk?'مقفل — '+d.n+' · المس الشاشة واكتب كلمة المرور':'المس الشاشة للفتح'}`;
+};
+Role.unlock=async function(){
+  const k=this.cur, r=this.pwOf(k); if(!r) return true;
+  this.unlocking=true;
+  try{
+    for(;;){
+      const v=await modal({title:'فتح قفل '+ROLE_DEF[k].n,iconName:'lock',
+        body:`<input class="field" id="ulPw" type="password" placeholder="كلمة المرور" autocomplete="off" style="width:100%;text-align:center;font-size:20px">`,
+        actions:[{label:icon('swap')+'تبديل المستخدم',val:'\u0000switch',cls:'ghost'},{label:'إلغاء',val:null,cls:'ghost'},{label:icon('check')+'فتح',val:ov=>$('#ulPw',ov).value,cls:'primary'}],
+        onOpen:(ov,done)=>{ paintIcons(ov); const i=$('#ulPw',ov); i.focus();
+          if(S.oskMode!=='off'&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
+          i.addEventListener('keydown',e=>{ if(e.key==='Enter') done(i.value); }); }});
+      if(typeof Keyboard!=='undefined'&&Keyboard.hide) Keyboard.hide();
+      if(v===null||v===undefined) return false;
+      if(v==='\u0000switch'){ unlockDone(); this.ask(); return false; }
+      if(await pwHash(v)===S.rolePw[k].h) return true;
+      toast('كلمة المرور غلط',false); beep(2,220);
+    }
+  } finally { this.unlocking=false; }
 };
 
 document.addEventListener('click',async e=>{
@@ -254,16 +287,18 @@ document.addEventListener('click',async e=>{
   const a=b.dataset.rpw, k=b.dataset.k;
   if(a==='switch'){ Role.ask(); return; }
   if(a==='clear'){
-    if(await confirmBox('إلغاء كلمة المرور','واجهة '+ROLE_DEF[k].n+' راح تنفتح بدون كلمة مرور.','إلغاء الكلمة',true,'trash')){
-      S.rolePw[k]={on:false,h:''}; save(); Extra.renderSec('users'); toast('تم إلغاء كلمة المرور'); }
+    if(await confirmBox('إلغاء القفل','واجهة '+ROLE_DEF[k].n+' راح تنفتح بدون كلمة مرور.','إلغاء القفل',true,'trash')){
+      S.rolePw[k]={on:false,h:''}; save(); Role.reSec(); toast('تم إلغاء القفل'); }
     return;
   }
   if(a==='set'||a==='on'){
-    if(a==='on'&&!b.checked){ S.rolePw[k].on=false; save(); Extra.renderSec('users'); toast('تم إيقاف كلمة المرور'); return; }
-    const v=await pwPrompt('كلمة مرور واجهة '+ROLE_DEF[k].n);
-    if(!v){ Extra.renderSec('users'); return; }
+    if(k==='student') return;
+    if(k!==Role.cur){ toast('كل مستخدم يحط قفله من إعداداته',false); return; }
+    if(a==='on'&&!b.checked){ S.rolePw[k].on=false; save(); Role.reSec(); toast('تم إيقاف القفل'); return; }
+    const v=await pwPrompt('كلمة مرور '+ROLE_DEF[k].n);
+    if(!v){ Role.reSec(); return; }
     const v2=await pwPrompt('أعد كتابة كلمة المرور');
-    if(v2!==v){ toast('الكلمتين مو نفسها',false); Extra.renderSec('users'); return; }
-    S.rolePw[k]={on:true,h:await pwHash(v)}; save(); Extra.renderSec('users'); toast('تم حفظ كلمة المرور');
+    if(v2!==v){ toast('الكلمتين مو نفسها',false); Role.reSec(); return; }
+    S.rolePw[k]={on:true,h:await pwHash(v)}; save(); Role.reSec(); toast('تم قفل '+ROLE_DEF[k].n+' بكلمة مرور');
   }
 });

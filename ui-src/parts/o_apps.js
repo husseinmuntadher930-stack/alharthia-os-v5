@@ -98,7 +98,7 @@ $('#setMain').addEventListener('click',async e=>{
   const x=e.target.closest('[data-apx]'); if(!x) return; const a=x.dataset.apx, id=x.dataset.id;
   if(a==='open') Apps.launch(id);
   if(a==='remove') await Store.remove(id);
-  if(a==='removeAll'){ if(S.pin&&S.lockStore&&!await pinPad('أدخل الرمز')) return;
+  if(a==='removeAll'){
     if(!await confirmBox('إزالة كل البرامج',`راح تنحذف ${nf(S.installed.length)} برامج من الجهاز.`,'إزالة الكل',true,'trash')) return;
     await Files.progress('جاري إزالة البرامج…',500*MB); S.dock=S.dock.filter(i=>!S.installed.includes(i)); S.installed=[]; save(); toast('تمت إزالة كل البرامج'); appsChanged(); }
 });
