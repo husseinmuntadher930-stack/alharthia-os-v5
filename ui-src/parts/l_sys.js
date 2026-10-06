@@ -142,6 +142,7 @@ function showSec(sec){
   if(sec==='storage') Storage.render();
   if(sec==='conn'){ renderConn(); if(window.Native&&Native.on&&Native.bt&&Native.bt.powered&&!(Native.near||[]).length) Native.btScan(); }
   if(sec==='sound') AudioOut.load();
+  if(sec==='boardset'){ TouchTest.render(); CamAssist.renderCard(); }
   if(Extra.secs[sec]) Extra.renderSec(sec);
 }
 $('#setNav').addEventListener('click',e=>{ const b=e.target.closest('[data-sec]'); if(b) showSec(b.dataset.sec); });
@@ -295,7 +296,7 @@ function tick(){
   Attend.init();
   renderDock();
   Keyboard.init(); Media.init(); AudioOut.init(); Term.init(); Side.init(); Cast.init(); Lang.apply(true);
-  Native.init();
+  Native.init(); CamAssist.init();
   Role.init();
   const m=$('#sysMsg'); $('#sysTxt').textContent='جاري التشغيل…'; m.hidden=false; if(S.bootSound) setTimeout(()=>beep(1,523),200);
   setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); if(S.lockOnStart) lockNow();

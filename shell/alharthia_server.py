@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -1252,6 +1252,82 @@ class Handler(BaseHTTPRequestHandler):
                                  % (bnd.encode(), len(data)))
                 self.wfile.write(data)
                 self.wfile.write(b"\r\n")
+                self.wfile.flush()
+        except (OSError, ValueError):
+            pass
+
+    # ---- كاميرا مساعدة للمس (تجريبية) — النظام يشتغل عادي بدونها
+    def api_cam(self, m, q):
+        import alharthia_cam as cm
+        e = cm.engine()
+        if m == "POST":
+            b = self.jbody()
+            return e.configure(b.get("enabled"), b.get("id"))
+        return e.status()
+
+    def api_cam_snap(self, m, q):
+        import alharthia_cam as cm
+        e = cm.engine()
+        data = e.preview()
+        if not data:
+            for _ in range(15):                      # أول مرة: ننطي الكاميرا شوية وقت تشتغل
+                time.sleep(0.1)
+                data = e.jpeg
+                if data:
+                    break
+        if not data:
+            return self.fail(e.err or "ماكو صورة من الكاميرا", 404)
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except OSError:
+            pass
+
+    def api_cam_calib(self, m, q):
+        import alharthia_cam as cm
+        e = cm.engine()
+        b = self.jbody() if m == "POST" else {}
+        step = b.get("step") or q.get("step", [""])[0]
+        if step == "begin":
+            return e.calib_begin()
+        if step == "point":
+            return e.calib_point(b.get("x"), b.get("y"))
+        if step == "finish":
+            r = e.calib_finish()
+            e.restart()
+            return r
+        if step == "cancel":
+            e.base = None
+            e.restart()
+            return {"ok": True}
+        raise ValueError("خطوة غير معروفة")
+
+    def api_cam_touch(self, m, q):
+        import alharthia_cam as cm
+        b = self.jbody()
+        return cm.engine().touch(b.get("p"), b.get("x"), b.get("y"))
+
+    def api_cam_events(self, m, q):
+        """أحداث المتابعة (SSE): مكان الإصبع المتوقّع من الكاميرا."""
+        import alharthia_cam as cm
+        e = cm.engine()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        seq = e.eseq
+        try:
+            while True:
+                seq, ev = e.wait_event(seq, timeout=15)
+                if ev is None:
+                    self.wfile.write(b": ping\n\n")
+                else:
+                    self.wfile.write(b"data: " + json.dumps(ev).encode() + b"\n\n")
                 self.wfile.flush()
         except (OSError, ValueError):
             pass

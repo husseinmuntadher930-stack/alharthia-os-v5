@@ -51,11 +51,9 @@ const Side={
   },
   /* تصغير الأزرار تلقائياً حتى تدخل القائمة كاملة بالشاشة (شاشات الصف صغيرة) */
   fit(p,horiz){
-    p.classList.remove('sm','xs');
+    let k=((Annot.on?S.drawSize:S.sideSize)||100)/100; p.style.setProperty('--sk',k);
     const room=()=>horiz?(p.scrollWidth<=innerWidth*0.92):(p.scrollHeight<=innerHeight*0.88);
-    if(room()) return;
-    p.classList.add('sm'); if(room()) return;
-    p.classList.remove('sm'); p.classList.add('xs');
+    for(let n=0;n<14&&!room()&&k>.45;n++){ k*=.9; p.style.setProperty('--sk',k.toFixed(3)); }
   },
   clampPos(){
     if(!S.sidePos||!this.draggable()) return;

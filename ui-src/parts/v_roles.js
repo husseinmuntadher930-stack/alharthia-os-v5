@@ -52,7 +52,7 @@ function pwPrompt(title,ph='كلمة المرور'){
   return modal({title,iconName:'key',body:`<input class="field" id="pwIn" type="password" placeholder="${esc(ph)}" autocomplete="off">`,
     actions:[{label:'إلغاء',val:null,cls:'ghost'},{label:'حفظ',val:ov=>$('#pwIn',ov).value||null,cls:'primary'}],
     onOpen:(ov,done)=>{ const i=$('#pwIn',ov); i.focus();
-      if(S.osk&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
+      if(S.oskMode!=='off'&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
       i.addEventListener('keydown',e=>{ if(e.key==='Enter') done(i.value||null); }); }});
 }
 
@@ -80,8 +80,8 @@ const Role={
         return `<button class="rcard" data-role="${k}" style="--rc:${d.c}">
           ${roleArt(k)}<span class="rc-nm">${d.n}${lk?`<span class="rc-lock" title="محمية بكلمة مرور">${icon('lock')}</span>`:''}</span>
           <span class="rc-note">${d.note}</span></button>`; }).join('')}</div>
-      <p class="wl-foot">${icon('info')} تكدر تبدّل المستخدم بأي وقت من القائمة الجانبية.</p></div>`;
-    paintIcons($('#welcome'));
+      <p class="wl-foot">${icon('info')} تكدر تبدّل المستخدم بأي وقت من القائمة الجانبية.</p></div>${this.kbdBtn()}`;
+    paintIcons($('#welcome')); this.kbdSync();
   },
   renderPw(k){
     this.pwRole=k;
@@ -92,11 +92,30 @@ const Role={
         <input id="wlPw" type="password" class="field" placeholder="كلمة المرور" autocomplete="off" inputmode="text">
         <div class="wl-err" id="wlErr" hidden></div>
         <div class="btns"><button class="btn ghost" data-wl="back">${icon('chevR')}رجوع</button>
-          <button class="btn primary" data-wl="ok">${icon('check')}دخول</button></div></div></div>`;
+          <button class="btn primary" data-wl="ok">${icon('check')}دخول</button></div></div></div>${this.kbdBtn()}`;
     paintIcons($('#welcome'));
     const i=$('#wlPw'); i.focus();
     i.onkeydown=e=>{ if(e.key==='Enter') this.tryPw(k); };
-    if(S.osk&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
+    if(S.oskMode!=='off'&&typeof Keyboard!=='undefined'&&Keyboard.show){ Keyboard.target=i; Keyboard.show(); }
+    this.kbdSync();
+  },
+  /* زر الكيبورد بأسفل يمين شاشة المستخدمين */
+  kbdBtn(){ return `<button class="wl-kbd" id="wlKbd" data-wl="kbd" title="كيبورد الشاشة" aria-label="كيبورد الشاشة">${icon('keyboard')}</button>`; },
+  kbdSync(){
+    const b=$('#wlKbd'); if(!b||typeof Keyboard==='undefined'||!Keyboard.el) return;
+    const off=S.oskMode==='off', vis=!Keyboard.el.hidden;
+    b.classList.toggle('off',off); b.classList.toggle('on',vis&&!off);
+    b.innerHTML=icon(off?'keyboardOff':'keyboard');
+  },
+  kbdToggle(){
+    if(typeof Keyboard==='undefined'||!Keyboard.el) return;
+    const i=$('#wlPw');
+    if(i){
+      if(S.oskMode==='off'){ S.oskMode='auto'; save(); Keyboard.syncBtn(); if(window.Native&&Native.on&&Native.pushKbd) Native.pushKbd(); }
+      if(!Keyboard.el.hidden) Keyboard.hide();
+      else { i.focus({preventScroll:true}); Keyboard.target=i; Keyboard.show(); }
+    } else Keyboard.toggleEnabled();
+    this.kbdSync();
   },
   async tryPw(k){
     const i=$('#wlPw'), er=$('#wlErr'); if(!i) return;
@@ -156,12 +175,16 @@ const Role={
     // شاشة الاختيار
     const el=document.createElement('div'); el.id='welcome'; el.hidden=true;
     document.body.appendChild(el);
+    // زر الكيبورد ما ياخذ التركيز من خانة كلمة المرور
+    el.addEventListener('pointerdown',e=>{ if(e.target.closest('#wlKbd')) e.preventDefault(); });
+    el.addEventListener('mousedown',e=>{ if(e.target.closest('#wlKbd')) e.preventDefault(); });
     el.addEventListener('click',async e=>{
       const r=e.target.closest('#welcome [data-role]');
       if(r){ const k=r.dataset.role; if(this.pwOf(k)) this.renderPw(k); else this.enter(k); return; }
       const b=e.target.closest('[data-wl]'); if(!b) return;
       if(b.dataset.wl==='back'){ if(typeof Keyboard!=='undefined'&&Keyboard.hide) Keyboard.hide(); this.renderPick(); }
       if(b.dataset.wl==='ok'&&this.pwRole) await this.tryPw(this.pwRole);
+      if(b.dataset.wl==='kbd') this.kbdToggle();
     });
 
     // منع الانتقال للشاشات المقفلة

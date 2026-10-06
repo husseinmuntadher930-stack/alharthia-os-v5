@@ -26,7 +26,9 @@ const Board={
     else this.pages=[this.newPage()];
     const lv=this.cLive;
     lv.addEventListener('pointerdown',e=>this.down(e));
-    lv.addEventListener('pointermove',e=>this.move(e));
+    // pointerrawupdate يوصل قبل pointermove بفريم تقريباً (أقل تأخير). إذا اشتغل نعتمد عليه، و pointermove بس للتوقّع
+    lv.addEventListener('pointerrawupdate',e=>{ this.rawOK=true; this.move(e); });
+    lv.addEventListener('pointermove',e=>{ if(this.rawOK){ this.predict(e); return; } this.move(e); this.predict(e); });
     for(const t of ['pointerup','pointercancel']) lv.addEventListener(t,e=>this.up(e,t==='pointercancel'));
     lv.addEventListener('contextmenu',e=>e.preventDefault());
     new ResizeObserver(()=>this.resize()).observe(this.area);
@@ -58,7 +60,14 @@ const Board={
     x.save(); x.setTransform(1,0,0,1,0,0); x.clearRect(0,0,this.cLive.width,this.cLive.height); x.restore();
     let again=false;
     for(const st of this.act.values()){
-      if(st.kind==='ink') drawInk(x,st.s,W);
+      if(st.kind==='ink'){
+        // الخط + ذيل مؤقت لحد مكان الإصبع الحقيقي والمتوقّع (والكاميرا إن وجدت)
+        const s=st.s, l=s.p[s.p.length-1], tail=[];
+        if(l&&st.raw&&Math.hypot(st.raw[0]-l[0],st.raw[1]-l[1])*W>.5) tail.push([st.raw[0],st.raw[1],l[2]]);
+        if(l&&st.pred) for(const q of st.pred) tail.push([q[0],q[1],l[2]]);
+        if(l&&st.cam) for(const q of st.cam) tail.push([q[0],q[1],l[2]]);
+        drawInk(x,tail.length?Object.assign({},s,{p:s.p.concat(tail)}):s,W);
+      }
       else if(st.kind==='erase'){ this.eraseInc(st); const q=st.s.p[st.s.p.length-1]; this.cursorCircle(x,q,st.s.w*W/2); }
       else if(st.kind==='oerase'){ this.cursorCircle(x,st.last,st.r*W); }
       else if(st.kind==='shape'&&st.it){ drawShape(x,st.it,W); if(LINE_KINDS.has(st.it.k)) this.measureLabel(x,st.it.a,st.it.b); }
@@ -144,8 +153,17 @@ const Board={
     }
     this.sched();
   },
+  /* توقّع مكان القلم بعد ~١٦ms حتى الخط يلحك الإصبع (رسم مؤقت فقط — ما ينحفظ) */
+  predict(e){
+    const st=this.act.get(e.pointerId); if(!st||st.kind!=='ink'||S.predict===false||!e.getPredictedEvents) return;
+    const W=this.W, r=st.raw; if(!r) return; let out=[];
+    for(const ev of e.getPredictedEvents().slice(0,3)){ let q=this.pt(ev); if(st.snap) q=this.projectSnap(st.snap,q);
+      const d=Math.hypot(q[0]-r[0],q[1]-r[1])*W; if(d>40) break; out.push(q); }
+    st.pred=out; this.sched();
+  },
   move(e){
     const st=this.act.get(e.pointerId); if(!st) return;
+    if(e.type==='pointerrawupdate'&&st.pred) st.pred=null;
     const evs=(e.getCoalescedEvents&&e.getCoalescedEvents())||[]; const list=evs.length?evs:[e];
     const W=this.W;
     if(st.kind==='ink'){

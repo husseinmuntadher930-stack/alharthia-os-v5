@@ -109,8 +109,10 @@
     <section class="screen" id="pdf" data-immersive>
       <div class="pdf-body">
         <aside id="thumbs" hidden></aside>
-        <div id="pdfStage">
-          <div id="pageWrap" hidden><canvas id="pdfCanvas"></canvas><div id="pdfInk" class="off"><canvas></canvas></div></div>
+        <div id="pdfView">
+          <div id="pdfStage"><div id="pages"></div></div>
+          <canvas id="pdfInkLayer"></canvas>
+          <div id="pZoomHud" hidden></div>
           <div id="pdfEmpty">
             <div class="big"><svg class="i" data-i="pdf"></svg></div>
             <h2>افتح ملف PDF</h2>
@@ -135,8 +137,9 @@
         <button class="dbtn" id="pNext" title="التالية"><svg class="i" data-i="chevL"></svg></button>
         <span class="dsep"></span>
         <button class="dbtn" id="pZout" title="تصغير"><svg class="i" data-i="zoomOut"></svg></button>
-        <button class="dbtn" id="pFit" title="ملاءمة"><svg class="i" data-i="fitW"></svg></button>
+        <span class="zlbl" id="pZlbl">100%</span>
         <button class="dbtn" id="pZin" title="تكبير"><svg class="i" data-i="zoomIn"></svg></button>
+        <button class="dbtn" id="pFit" title="ملاءمة"><svg class="i" data-i="fitW"></svg></button>
         <span class="dsep"></span>
         <button class="dbtn toggle" id="pPen" title="الكتابة على الصفحة"><svg class="i" data-i="pen"></svg></button>
         <div id="pInkTools" class="sws" hidden>
@@ -353,6 +356,8 @@
               <div class="row"><label>الحفظ التلقائي للسبورة<span class="hint">ترجع كتابتك حتى لو انطفأ الجهاز</span></label><label class="sw"><input type="checkbox" id="sAuto"><span></span></label></div>
               <div class="row"><span class="lbl">صفحات السبورة الحالية</span><button class="btn danger" id="clearBoards"><svg class="i" data-i="trash"></svg>حذف كل الصفحات</button></div>
             </div>
+            <div class="card" id="touchTest"></div>
+            <div class="card" id="camCard"></div>
           </div>
 
           <div class="sec" data-sec="sound" hidden>

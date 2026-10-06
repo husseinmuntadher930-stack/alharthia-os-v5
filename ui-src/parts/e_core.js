@@ -132,7 +132,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='2.0.0';
+const OS_VERSION='2.1.0';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -140,10 +140,10 @@ const DEF={
   wall:'navy', wallImg:null, clock:true, h24:false, ar:true,
   mode:'light', theme:'harthia', acc:'#f0703e',
   wifi:true, wifiNet:'Harthiya-School', bt:true, btVisible:true, btReceive:true, btAuto:false, btName:'Alharthia-3C',
-  boardBg:'white', palm:true, penOnly:false, assistDef:false, smooth:.45, autosave:true,
+  boardBg:'white', palm:true, penOnly:false, assistDef:false, smooth:.45, autosave:true, predict:true,
   vol:70, bright:100, sleep:'10', recent:[], installed:[],
   wallId:null, lockMode:'same', lockId:null, appBgId:null, appBgOp:.18, wallDim:30, wallBlur:0, autoColors:true, slideshow:false, slideMin:'10', customPri:'#132557',
-  uiScale:100, dockScale:100, dockLabels:true, nightLight:false, nightLevel:35, nightAuto:false, orient:'landscape',
+  uiScale:100, dockScale:100, sideSize:125, drawSize:115, bdSize:115, dockLabels:true, nightLight:false, nightLevel:35, nightAuto:false, orient:'landscape',
   contrast:false, reduceMotion:false, bigCursor:false, hideCursor:false, clickSound:false, osk:true, boldText:false,
   lang:'ar', dateFmt:'long', tz:'Asia/Baghdad', autoTime:true,
   pin:null, lockOnStart:false, lockSettings:false, lockStore:false,

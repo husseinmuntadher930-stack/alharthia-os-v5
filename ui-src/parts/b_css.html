@@ -70,6 +70,19 @@ html[data-theme=dark] .dbtn.on{background:var(--acc)}
 .sizeprev i{display:block;border-radius:50%;background:var(--text-2)}
 .pg{min-width:60px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;color:var(--head);flex:none;font-size:15px}
 @media (max-width:1500px){ .dbtn .lb{display:none} .dbtn{height:56px;min-width:50px} #boardDock{height:72px} }
+/* حجم شريط السبورة من الإعدادات (--bdK) */
+#boardDock{height:calc(82px*var(--bdK,1));gap:calc(4px*var(--bdK,1))}
+#boardDock .dbtn{min-width:calc(56px*var(--bdK,1));height:calc(66px*var(--bdK,1));border-radius:calc(14px*var(--bdK,1))}
+#boardDock .dbtn svg{font-size:calc(25px*var(--bdK,1))}
+#boardDock .dbtn .lb{font-size:calc(11px*var(--bdK,1))}
+#boardDock .swc{width:calc(38px*var(--bdK,1));height:calc(38px*var(--bdK,1))}
+#boardDock .swc.wheel::before{inset:calc(9px*var(--bdK,1))}
+#boardDock .sizeprev{width:calc(40px*var(--bdK,1));height:calc(40px*var(--bdK,1))}
+#boardDock .pg{min-width:calc(60px*var(--bdK,1));font-size:calc(15px*var(--bdK,1))}
+#boardDock .dsep{margin:calc(14px*var(--bdK,1)) 4px}
+#boardDock .dbtn .car{border-width:calc(4px*var(--bdK,1))}
+#board .bpop{bottom:calc(82px*var(--bdK,1) + 10px)}
+@media (max-width:1500px){ #boardDock{height:calc(72px*var(--bdK,1))} #boardDock .dbtn{height:calc(56px*var(--bdK,1));min-width:calc(50px*var(--bdK,1))} #board .bpop{bottom:calc(72px*var(--bdK,1) + 10px)} }
 
 .bpop{position:absolute;z-index:20;bottom:92px;background:var(--surface);color:var(--text);border-radius:22px;padding:14px;box-shadow:var(--shadow-lg);border:1px solid var(--line);max-width:calc(100vw - 20px);max-height:calc(100% - 120px);overflow:auto}
 .bpop h5{margin:2px 4px 10px;font-size:14px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}

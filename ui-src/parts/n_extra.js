@@ -79,6 +79,7 @@ let nightEl=null;
 function applySystemPrefs(){
   const r=document.documentElement;
   r.style.setProperty('--uz',S.uiScale/100); r.style.setProperty('--ds',S.dockScale/100);
+  r.style.setProperty('--sideK',(S.sideSize||125)/100); r.style.setProperty('--drawK',(S.drawSize||115)/100); r.style.setProperty('--bdK',(S.bdSize||115)/100);
   r.classList.toggle('nolabels',!S.dockLabels); r.classList.toggle('hc',S.contrast); r.classList.toggle('rm',S.reduceMotion);
   r.classList.toggle('bigcur',S.bigCursor&&!S.hideCursor); r.classList.toggle('nocur',S.hideCursor); r.classList.toggle('bold',S.boldText);
   r.style.setProperty('--wdim',S.wallDim/100); r.style.setProperty('--wblur',S.wallBlur+'px');
@@ -93,7 +94,7 @@ const sw=(key,label,hint='')=>`<div class="row"><label>${label}${hint?`<span cla
 const rg=(key,label,min,max,step=1,suffix='',hint='')=>`<div class="row"><label>${label}${hint?`<span class="hint">${hint}</span>`:''}</label><input type="range" data-xr="${key}" min="${min}" max="${max}" step="${step}" value="${S[key]}"><b style="min-width:60px;text-align:center" data-xv="${key}">${nf(S[key])}${suffix}</b></div>`;
 const sel=(key,label,opts,hint='')=>`<div class="row"><label>${label}${hint?`<span class="hint">${hint}</span>`:''}</label><select class="field" data-xsel="${key}">${opts.map(([v,n])=>`<option value="${v}" ${String(S[key])===String(v)?'selected':''}>${n}</option>`).join('')}</select></div>`;
 const Extra={
-  suffix:{uiScale:'٪',dockScale:'٪',nightLevel:'٪',wallDim:'٪',wallBlur:'px',appBgOp:''},
+  suffix:{uiScale:'٪',dockScale:'٪',sideSize:'٪',drawSize:'٪',bdSize:'٪',nightLevel:'٪',wallDim:'٪',wallBlur:'px',appBgOp:''},
   secs:{
     gallery(){
       const tags=it=>[S.wall==='img'&&S.wallId===it.id?'الرئيسية':'',S.lockMode==='img'&&S.lockId===it.id?'القفل':'',S.appBgId===it.id?'النوافذ':''].filter(Boolean).map(t=>`<span>${t}</span>`).join('');
@@ -161,6 +162,12 @@ const Extra={
       <div class="card"><h3>${icon('cursor')}المؤشر والإدخال</h3>
         ${sw('bigCursor','مؤشر ماوس كبير')}
         ${sw('hideCursor','إخفاء المؤشر','مناسب لشاشات اللمس')}
+      </div>
+      <div class="card"><h3>${icon('sidebar')}أحجام القوائم</h3>
+        ${rg('sideSize','حجم القائمة الجانبية','70','200','5','٪','القائمة اللي تطلع من السهم على جانب الشاشة')}
+        ${rg('drawSize','حجم قائمة الرسم','70','200','5','٪','أدوات الكتابة فوق الشاشة')}
+        ${rg('bdSize','حجم شريط أدوات السبورة','70','170','5','٪','الشريط اللي جوة السبورة (قلم، ممحاة، أشكال…)')}
+        <div class="row"><span class="lbl">إرجاع الأحجام الافتراضية</span><button class="btn sm" data-x="sizesReset">${icon('restart')}إرجاع</button></div>
       </div>
       <div class="card"><h3>${icon('grip')}قائمة الكتابة فوق الشاشة</h3>
         ${sel('sideDir','اتجاه القائمة',[['v','عمودية'],['h','أفقية']])}
@@ -231,6 +238,7 @@ const Extra={
   after(key){
     if(['ar','h24','dateFmt','tz'].includes(key)){ tick(); Board.changed(); Timer.render(); const n=$('#xNow'); if(n) n.textContent=`${timeParts().t} ${timeParts().ap} — ${dateStr()}`; }
     if(['wallDim','wallBlur','appBgOp','lockMode'].includes(key)) applyWalls();
+    if(['sideSize','drawSize','bdSize'].includes(key)){ applySystemPrefs(); if(Side.open) Side.show(Side.side); if(typeof Board!=='undefined'&&Board.closePop) Board.closePop(); }
     if(key==='slideshow'||key==='slideMin') this.startSlides();
     if(key==='autoTime') this.renderSec('time');
     if(key==='orient'||key==='res') toast('يطبَّق على الشاشة الحقيقية بعد التأكيد');
@@ -278,6 +286,7 @@ const Extra={
       if(a==='calib') this.calibrate();
       if(a==='export') this.exportFile();
       if(a==='import') $('#impFile').click();
+      if(a==='sizesReset'){ S.sideSize=125; S.drawSize=115; S.bdSize=115; save('رجعت الأحجام الافتراضية'); this.after('sideSize'); this.renderSec('access'); return; }
       if(a==='sideReset'){ S.sidePos=null; save('تم إرجاع القائمة لمكانها'); if(Side.open) Side.show(Side.side); }
       if(a==='resetSettings'){ if(await confirmBox('إرجاع الإعدادات','كل الإعدادات ترجع للأصل (الملفات والسبورات تبقى).','إرجاع',true,'restart')){ const keep={installed:S.installed}; Object.keys(S).forEach(k=>delete S[k]); Object.assign(S,structuredClone(DEF),keep); store.set('settings',S); location.reload(); } }
       if(a==='checkUpd'){ await Files.progress('جاري البحث عن تحديثات…',200*MB); toast('النظام محدَّث لآخر إصدار'); }
