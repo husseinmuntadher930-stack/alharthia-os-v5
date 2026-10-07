@@ -8,6 +8,7 @@ ICONS.semi='<path d="M3 16h18"/><path d="M21 16a9 9 0 0 0-18 0"/>';
 ICONS.square='<rect x="4" y="4" width="16" height="16" rx="1"/>';
 ICONS.penScreen='<path d="M4 20h16"/><path d="m14.5 3.5 6 6L9 21H3v-6z"/>';
 ICONS.camera='<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>';
+ICONS.split='<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>';
 ICONS.grip='<circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/>';
 ICONS.exit='<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="m16 16 4-4-4-4"/><path d="M20 12H10"/>';
 const SIDE_SHAPES=[['line','خط مستقيم','line'],['semi','نصف دائرة','semi'],['circle','دائرة','circle'],['rect','مربع / مستطيل','square'],['triangle','مثلث','triangle']];
@@ -73,7 +74,7 @@ const Side={
   hide(){ this.open=false; this.closePop(); $('#sidePanel').hidden=true; $$('#sideWrap .side-h').forEach(h=>h.classList.remove('hide')); },
   mainTools(){
     return [{k:'files',t:'الملفات',i:'folder'},{k:'bt',t:'البلوتوث',i:'bluetooth'},{k:'board',t:'السبورة',i:'board'},
-      {k:'shot',t:'لقطة شاشة',i:'camera'},{k:'cast',t:'العرض اللاسلكي',i:'cast'},null,
+      {k:'shot',t:'لقطة شاشة',i:'camera'},{k:'cast',t:'العرض اللاسلكي',i:'cast'},{k:'split',t:'تقسيم الشاشة',i:'split',on:SPL.on||!!Split.nat},null,
       {k:'annot',t:'الكتابة فوق الشاشة',i:'penScreen'},null,{k:'close',t:'إغلاق القائمة',i:'x'}];
   },
   drawTools(){
@@ -108,6 +109,7 @@ const Side={
       case 'clear': Board.clearPage(); break;
       case 'exit': Annot.exit(); this.show(this.side); break;
       case 'cast': Annot.exit(); this.hide(); go('cast'); break;
+      case 'split': Annot.exit(); this.hide(); Split.toggle(); break;
       case 'shot': Shot.take(); break;
       case 'close': this.hide(); break;
     }

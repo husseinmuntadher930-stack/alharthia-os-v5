@@ -111,7 +111,7 @@ const Term={
   },
   init(){
     $('#term').addEventListener('click',e=>this.onBar(e));
-    new ResizeObserver(()=>{ if(current==='term') this.fitAll(); }).observe($('#termBody'));
+    new ResizeObserver(()=>{ if(isShown('term')) this.fitAll(); }).observe($('#termBody'));
   }
 };
 onShow.term=()=>Term.show();

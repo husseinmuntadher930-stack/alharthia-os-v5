@@ -44,7 +44,7 @@ const Pdf={
     this.stage.addEventListener('scroll',()=>{ this.onScroll(); },{passive:true});
     this.stage.addEventListener('wheel',e=>{ if(!this.doc||!e.ctrlKey) return; e.preventDefault();
       const r=this.stage.getBoundingClientRect(); this.zoomAt(this.zoom*Math.exp(-e.deltaY*.0025),e.clientX-r.left,e.clientY-r.top); },{passive:false});
-    new ResizeObserver(()=>{ this.sizeInk(); if(this.doc&&current==='pdf') this.relayout(true); }).observe(this.view);
+    new ResizeObserver(()=>{ this.sizeInk(); if(this.doc&&isShown('pdf')) this.relayout(true); }).observe(this.view);
     let hideT=0; $('#pdf').addEventListener('pointermove',e=>{ if(!$('#pdf').classList.contains('full')) return; const bar=$('#pdfBar'); if(innerHeight-e.clientY<120){bar.classList.add('show');clearTimeout(hideT);} else {clearTimeout(hideT);hideT=setTimeout(()=>bar.classList.remove('show'),1200);} });
     this.sizeInk(); this.inkUi(); this.ui();
   },

@@ -219,7 +219,7 @@ const Extra={
       </div>
       <div class="card"><h3>${icon('download')}التحديثات</h3>
         ${sw('autoUpdate','تحديث تلقائي خارج وقت الدوام')}
-        <div class="row"><span class="lbl">الإصدار الحالي<span class="hint">Alharthia OS ${OS_VERSION}</span></span><button class="btn" data-x="checkUpd">${icon('restart')}البحث عن تحديثات</button></div>
+        <div class="row"><span class="lbl">الإصدار الحالي<span class="hint">${OS_NAME}</span></span><button class="btn" data-x="checkUpd">${icon('restart')}البحث عن تحديثات</button></div>
       </div>`;
     }
   },

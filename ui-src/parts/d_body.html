@@ -24,6 +24,7 @@
   </header>
 
   <main id="screens">
+    <div id="spDiv" hidden><span class="spg"></span><div class="spb"><button data-sp="swap" title="تبديل الجهتين"></button><button data-sp="x" title="إنهاء التقسيم"></button></div></div>
     <!-- ================= HOME ================= -->
     <section class="screen on" id="home">
       <div class="wall navy" id="homeWall"></div><div class="pattern"></div>
@@ -150,6 +151,7 @@
           <button class="dbtn" id="pClear" title="مسح الكتابة"><svg class="i" data-i="trash"></svg></button>
         </div>
         <span class="grow"></span>
+        <button class="dbtn" data-rpick title="طالب عشوائي"><svg class="i" data-i="dice"></svg></button>
         <button class="dbtn" id="pFull" title="ملء الشاشة"><svg class="i" data-i="fit"></svg></button>
       </div>
     </section>
@@ -238,6 +240,9 @@
       <input type="file" id="atFile" accept=".txt,.csv,text/plain,text/csv" hidden>
     </section>
 
+    <!-- ================= SCHEDULE ================= -->
+    <section class="screen app" id="sched"><div class="main" id="schMain"></div></section>
+
     <!-- ================= GENERIC INSTALLED APP ================= -->
     <section class="screen app" id="gen"><div class="gen" id="genBody"></div></section>
 
@@ -253,6 +258,7 @@
           <button class="nav-btn" data-sec="conn"><svg class="i" data-i="wifi"></svg><span class="txt">الاتصالات</span></button>
           <button class="nav-btn" data-sec="storage"><svg class="i" data-i="hdd"></svg><span class="txt">التخزين</span></button>
           <button class="nav-btn" data-sec="boardset"><svg class="i" data-i="board"></svg><span class="txt">السبورة</span></button>
+          <button class="nav-btn" data-sec="camera"><svg class="i" data-i="camera"></svg><span class="txt">الكاميرا</span></button>
           <button class="nav-btn" data-sec="sound"><svg class="i" data-i="vol"></svg><span class="txt">الصوت والسطوع</span></button>
           <button class="nav-btn" data-sec="time"><svg class="i" data-i="globe"></svg><span class="txt">اللغة والوقت</span></button>
           <button class="nav-btn" data-sec="access"><svg class="i" data-i="eyedrop"></svg><span class="txt">سهولة الاستخدام</span></button>
@@ -265,6 +271,7 @@
         <div class="main" id="setMain">
 
           <div class="sec" data-sec="users" hidden></div>
+          <div class="sec" data-sec="camera" hidden></div>
 
           <div class="sec" data-sec="look">
             <h1 class="h1">الواجهة والألوان</h1><p class="sub">الوضع الليلي والصباحي، ألوان النظام، والخلفية.</p>
@@ -357,6 +364,7 @@
               <div class="row"><span class="lbl">صفحات السبورة الحالية</span><button class="btn danger" id="clearBoards"><svg class="i" data-i="trash"></svg>حذف كل الصفحات</button></div>
             </div>
             <div class="card" id="touchTest"></div>
+            <div class="card" id="inkCard"></div>
             <div class="card" id="camCard"></div>
           </div>
 

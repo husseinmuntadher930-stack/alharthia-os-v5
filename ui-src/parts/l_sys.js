@@ -142,7 +142,9 @@ function showSec(sec){
   if(sec==='storage') Storage.render();
   if(sec==='conn'){ renderConn(); if(window.Native&&Native.on&&Native.bt&&Native.bt.powered&&!(Native.near||[]).length) Native.btScan(); }
   if(sec==='sound') AudioOut.load();
-  if(sec==='boardset'){ TouchTest.render(); CamAssist.renderCard(); }
+  if(sec!=='camera') CamView.stop();
+  if(sec==='camera') CamView.render();
+  if(sec==='boardset'){ TouchTest.render(); FastInk.renderCard(); CamAssist.renderCard(); }
   if(Extra.secs[sec]) Extra.renderSec(sec);
 }
 $('#setNav').addEventListener('click',e=>{ const b=e.target.closest('[data-sec]'); if(b) showSec(b.dataset.sec); });
@@ -209,7 +211,7 @@ function bindSettings(){
   makeDraggable('pv');
 }
 function renderAbout(){
-  const rows=[['اسم النظام','Alharthia OS '+OS_VERSION],['الأساس','Raspberry Pi OS Lite (Debian) — 64-bit'],['الواجهة','Wayland (labwc) + واجهة الصف'],['الجهاز','Raspberry Pi 5 — ذاكرة 8 GB'],['التخزين','NVMe SSD — 256 GB'],['الشاشة',`${screen.width} × ${screen.height} — شاشة لمس تفاعلية`],['البرامج المثبتة من المتجر',nf(S.installed.length)],['المدرسة',S.school],['الصف',S.cls]];
+  const rows=[['اسم النظام',OS_NAME],['الأساس','Raspberry Pi OS Lite (Debian) — 64-bit'],['الواجهة','Wayland (labwc) + واجهة الصف'],['الجهاز','Raspberry Pi 5 — ذاكرة 8 GB'],['التخزين','NVMe SSD — 256 GB'],['الشاشة',`${screen.width} × ${screen.height} — شاشة لمس تفاعلية`],['البرامج المثبتة من المتجر',nf(S.installed.length)],['المدرسة',S.school],['الصف',S.cls]];
   $('#aboutCard').innerHTML=`<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px"><img src="${logoSrc()}" alt="" class="logo-thumb" style="width:76px;height:76px"><div><div style="font-size:24px;font-weight:700;color:var(--head);direction:ltr;text-align:right">Alharthia <span style="color:var(--acc)">OS</span></div><div class="sub" style="margin:0">الإصدار ${OS_VERSION} — نظام الصف التفاعلي</div></div></div>`+
     rows.map(([k,v])=>`<div class="row"><span class="lbl" style="color:var(--muted)">${k}</span><span style="font-weight:600;flex:1.4">${esc(v)}</span></div>`).join('')+
     `<div class="btns" style="margin-top:12px"><button class="btn" data-toast="النظام محدَّث لآخر إصدار">${icon('restart')}البحث عن تحديثات</button></div>`;
@@ -294,10 +296,10 @@ function tick(){
   document.fonts&&document.fonts.ready.then(()=>{ layoutAll(); Board.redraw(); });
   addEventListener('beforeunload',()=>{ Board.persist(); FS.persist(); });
   Extra.init();
-  Attend.init();
+  Attend.init(); Sched.init(); Split.init();
   renderDock();
   Keyboard.init(); Media.init(); AudioOut.init(); Term.init(); Side.init(); Cast.init(); Lang.apply(true);
-  Native.init(); CamAssist.init();
+  Native.init(); CamAssist.init(); FastInk.init();
   Role.init();
   const m=$('#sysMsg'); $('#sysTxt').textContent='جاري التشغيل…'; m.hidden=false; if(S.bootSound) setTimeout(()=>beep(1,523),200);
   setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); 

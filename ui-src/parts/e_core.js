@@ -132,7 +132,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='2.1.1';
+const OS_VERSION='2.3.0', OS_NAME='AlharthiaOS 2.3';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -319,12 +319,16 @@ function applyTheme(){
 }
 
 /* ---------------- navigation ---------------- */
-const TITLES={home:'',media:'مشغل الوسائط',term:'الطرفية',cast:'العرض اللاسلكي',apps:'التطبيقات',board:'السبورة',pdf:'قارئ PDF',files:'مستكشف الملفات',office:'المستندات',browser:'Chromium',store:'متجر التطبيقات',timer:'المؤقت',attend:'الحضور والغياب',settings:'الإعدادات',gen:''};
+const TITLES={home:'',media:'مشغل الوسائط',term:'الطرفية',cast:'العرض اللاسلكي',apps:'التطبيقات',board:'السبورة',pdf:'قارئ PDF',files:'مستكشف الملفات',office:'المستندات',browser:'Chromium',store:'متجر التطبيقات',timer:'المؤقت',attend:'الحضور والغياب',sched:'جدول الحصص',settings:'الإعدادات',gen:''};
 let current='home';
 const onShow={}, onHide={};
+/* تقسيم الشاشة: a = الجهة اليمين، b = اليسار، act = البانل الفعّال (الي ينفتح بيه أي تطبيق جديد) */
+const SPL={on:false,a:null,b:null,act:'a'};
+const isShown=id=>current===id||(SPL.on&&(SPL.a===id||SPL.b===id));
 function go(id,arg){
   if(!(id in TITLES)) return;
   closeQP(); window.Board&&Board.closePop&&Board.closePop();
+  if(SPL.on) return Split.go(id,arg);
   if(current!==id){ onHide[current]&&onHide[current](); }
   if(current==='home'&&id!=='home') setDrag(false);
   $$('.screen').forEach(s=>s.classList.toggle('on',s.id===id));
@@ -353,5 +357,5 @@ function toggleFullscreen(){
 }
 document.addEventListener('fullscreenchange',()=>{ const f=!!document.fullscreenElement;
   for(const id of ['dFull','pFull']){const b=$('#'+id); if(!b) continue; b.classList.toggle('on',f); const s=b.querySelector('svg'); s.innerHTML=ICONS[f?'exitFull':'fit']; const l=b.querySelector('.lb'); if(l) l.textContent=f?'خروج من ملء الشاشة':'ملء الشاشة';}
-  $('#pdf').classList.toggle('full',f&&current==='pdf');
+  $('#pdf').classList.toggle('full',f&&isShown('pdf'));
 });

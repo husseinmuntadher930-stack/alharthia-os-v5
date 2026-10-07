@@ -312,7 +312,7 @@ def run_qt(Q):
             self.chrome_page.runJavaScript("window.BR&&BR.state(%s)" % json.dumps(st, ensure_ascii=False))
 
         # window
-        def open(self, url=None):
+        def open(self, url=None, half=False):
             if url or not self.tabs:
                 cur = self.tab()
                 if url and cur and cur.page.url().toString().startswith(URL + "newtab.html"):
@@ -322,6 +322,9 @@ def run_qt(Q):
             if WINDOWED:
                 self.win.resize(1600, 900)
                 self.win.show()
+            elif half:
+                self.win.resize(900, 700)      # split screen: normal window, labwc snaps it
+                self.win.showNormal()
             else:
                 self.win.showFullScreen()
             self.win.raise_()
@@ -438,7 +441,11 @@ def run_qt(Q):
                 except ValueError:
                     return
                 if c.get("cmd") == "browser":
-                    self.browser.open(c.get("url"))
+                    self.browser.open(c.get("url"), half=bool(c.get("half")))
+                elif c.get("cmd") == "unfull":      # split screen: let labwc snap the interface window to a half
+                    self.browser.shell.showNormal()
+                elif c.get("cmd") == "full":
+                    self.browser.shell.showFullScreen()
 
     page = ShellPage(profile, app)
     setup_settings(page, shell=True)

@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "2.1.1"
+VERSION = "2.3.0"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -407,6 +407,63 @@ def launch(app_id=None, path=None, url=None):
             cmd.append(safe_path(path))
     subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     return {"ok": True}
+
+
+# ---- split screen for external programs: labwc snaps the focused window with Super+Left / Super+Right
+def _toplevels():
+    if not has("lswt"):
+        return None
+    try:
+        import alharthia_share as _sh
+        p = subprocess.run(["lswt", "-j"], capture_output=True, text=True, timeout=3, env=_sh.wl_env())
+        d = json.loads(p.stdout or "[]")
+        return len(d.get("toplevels", []) if isinstance(d, dict) else d)
+    except Exception:  # noqa
+        return None
+
+
+def _wtype(key):
+    import alharthia_share as _sh
+    subprocess.run(["wtype", "-M", "logo", "-k", key, "-m", "logo"], timeout=5, env=_sh.wl_env(),
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _focus_shell():
+    if has("wlrctl"):
+        import alharthia_share as _sh
+        subprocess.run(["wlrctl", "toplevel", "focus", "app_id:alharthia-shell", "title:Alharthia OS"], timeout=4,
+                       env=_sh.wl_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def split_snap(side):
+    """side = the half the external program takes ('Left' / 'Right'); the interface takes the other."""
+    other = "Right" if side == "Left" else "Left"
+    before = _toplevels()
+    t0 = time.time()
+    while time.time() - t0 < 25:          # wait for the new window to appear (LibreOffice is slow)
+        n = _toplevels()
+        if before is None or (n is not None and n > before):
+            break
+        time.sleep(0.5)
+    time.sleep(1.2)
+    try:
+        _wtype(side)                      # the new window has the focus
+        time.sleep(0.6)
+        _focus_shell()
+        time.sleep(0.5)
+        _wtype(other)
+        time.sleep(0.4)
+    except Exception:  # noqa
+        pass
+
+
+def split_restore():
+    try:
+        _focus_shell()
+        time.sleep(0.4)
+        _wtype("Up")                      # Super+Up = maximize
+    except Exception:  # noqa
+        pass
 
 
 def start_job(kind, args):
@@ -1112,6 +1169,54 @@ class Handler(BaseHTTPRequestHandler):
             raise PermissionError("إزالة البرامج مو متاح بواجهة الطالب")
         return start_job(*remove_args(self.jbody()["id"]))
 
+    # ------------------------------------------------------------ fast ink overlay (alharthia_ink.py)
+    def api_ink(self, m, q):
+        cache = os.path.join(HOME, ".cache", "alharthia")
+        if m == "POST":
+            b = self.jbody()
+            num = lambda v, d=0.0: float(v) if isinstance(v, (int, float)) else d
+            box = lambda r: [round(num(x), 5) for x in r][:4] if isinstance(r, list) and len(r) == 4 else None
+            cal = b.get("cal") if isinstance(b.get("cal"), dict) else {}
+            st = {"on": bool(b.get("on")), "rect": box(b.get("rect")),
+                  "deny": [d for d in (box(x) for x in (b.get("deny") or [])[:40]) if d],
+                  "color": str(b.get("color") or "#111827")[:9], "width": num(b.get("width"), 0.003),
+                  "tail": int(num(b.get("tail"), 110)), "cancel": int(num(b.get("cancel"))),
+                  "cal": {"ok": bool(cal.get("ok")), "swap": bool(cal.get("swap")), "ax": num(cal.get("ax"), 1.0),
+                          "bx": num(cal.get("bx")), "ay": num(cal.get("ay"), 1.0), "by": num(cal.get("by"))}}
+            os.makedirs(cache, exist_ok=True)
+            tmp = os.path.join(cache, "ink-state.json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(st, f)
+            os.replace(tmp, os.path.join(cache, "ink-state.json"))
+            return {"ok": True}
+        try:
+            with open(os.path.join(cache, "ink-status.json"), encoding="utf-8") as f:
+                s = json.load(f)
+        except (OSError, ValueError):
+            s = {}
+        alive = bool(s.get("pid")) and os.path.exists("/proc/%d" % int(s["pid"])) and time.time() - s.get("t", 0) < 30
+        return {"running": alive, "devices": s.get("devices", []) if alive else []}
+
+    def api_ink_last(self, m, q):
+        try:
+            with open(os.path.join(HOME, ".cache", "alharthia", "ink-last.json"), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {"downs": []}
+
+    # ------------------------------------------------------------ split screen (labwc)
+    def api_split_snap(self, m, q):
+        """يثبّت البرنامج الخارجي الجديد بنص الشاشة (side = left | right) والواجهة بالنص الثاني."""
+        side = "Left" if self.jbody().get("side") == "left" else "Right"
+        if not has("wtype"):
+            raise RuntimeError("أداة wtype غير مثبتة — تقسيم البرامج الخارجية يحتاجها")
+        threading.Thread(target=split_snap, args=(side,), daemon=True).start()
+        return {"ok": True}
+
+    def api_split_restore(self, m, q):
+        threading.Thread(target=split_restore, daemon=True).start()
+        return {"ok": True}
+
     def api_role(self, m, q):
         """الواجهة تخبر النظام منو داخل، والنظام يطبّق المنع على مستوى التشغيل."""
         if m == "POST":
@@ -1286,6 +1391,52 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
         except OSError:
             pass
+
+    def api_cam_stream(self, m, q):
+        """بث مباشر للكاميرا (MJPEG) لصفحة الكاميرا بالإعدادات."""
+        import alharthia_cam as cm
+        e = cm.engine()
+        data = e.preview()
+        for _ in range(40):                          # أول مرة: ننتظر الكاميرا تشتغل
+            if data or (e.err and not e.running):
+                break
+            time.sleep(0.1)
+            data = e.jpeg
+        if not data:
+            return self.fail(e.err or "ماكو صورة من الكاميرا", 404)
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=alhframe")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        last, idle = None, 0
+        try:
+            while True:
+                data = e.preview()
+                if data and data is not last:
+                    last, idle = data, 0
+                    self.wfile.write(b"--alhframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(data) + data + b"\r\n")
+                    self.wfile.flush()
+                else:
+                    time.sleep(0.02)
+                    idle += 1
+                    if idle > 250:                   # ٥ ثواني بدون صورة جديدة → نقطع، والواجهة تعيد المحاولة
+                        break
+        except (OSError, ValueError):
+            pass
+
+    def api_cam_save(self, m, q):
+        import alharthia_cam as cm
+        data = cm.engine().preview()
+        if not data:
+            raise RuntimeError("ماكو صورة من الكاميرا")
+        folder = os.path.join(HOME, FOLDERS["pics"])
+        os.makedirs(folder, exist_ok=True)
+        name = time.strftime("كاميرا-%Y-%m-%d-%H%M%S.jpg")
+        path = os.path.join(folder, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return {"ok": True, "path": path, "name": name}
 
     def api_cam_calib(self, m, q):
         import alharthia_cam as cm

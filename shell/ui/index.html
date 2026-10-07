@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Alharthia OS — واجهة الصف</title>
+<title>AlharthiaOS 2.3 — واجهة الصف</title>
 <link rel="stylesheet" href="/vendor/fonts/fonts.css">
 <style>
 :root{
@@ -945,6 +945,88 @@ html.nocur,html.nocur *{cursor:none!important}
   .store-grid{grid-template-columns:1fr}
   .strip .s-school,.strip .dot{display:none}
 }
+
+/* ============ شاشة الكاميرا ============ */
+.cv-box{position:relative;margin-top:14px;background:#000;border-radius:16px;overflow:hidden;aspect-ratio:4/3;max-height:calc(100vh - 330px);min-height:220px;margin-inline:auto;width:100%;display:flex;align-items:center;justify-content:center}
+.cv-box img{width:100%;height:100%;object-fit:contain;display:block}
+.cv-box.mir img{transform:scaleX(-1)}
+.cv-box.rot img{transform:rotate(180deg)}
+.cv-box.mir.rot img{transform:rotate(180deg) scaleX(-1)}
+.cv-box:fullscreen{max-height:none;aspect-ratio:auto;border-radius:0}
+.cv-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:linear-gradient(0deg,rgba(0,0,0,.72),transparent);color:#fff}
+.cv-bar .cam-st{color:#e5e7eb;font-size:13px}
+.cv-bar .cam-st.ok{color:#4ade80}
+.cv-bar .btn{height:38px;background:rgba(255,255,255,.18);color:#fff;backdrop-filter:blur(6px)}
+.cv-err{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;color:#fff;background:rgba(0,0,0,.7);padding:20px;text-align:center}
+
+/* ============ جدول الحصص ============
+
+#schMain{container-type:inline-size}
+.sch-wrap{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.sch-card{flex:1 1 560px;min-width:0;padding:14px}
+.sch-side{flex:0 1 300px;min-width:min(100%,260px);width:300px}
+@container (max-width:900px){.sch-side{flex:1 1 100%;width:auto}}
+.sch-scroll{overflow-x:auto}
+table.sch{width:100%;border-collapse:separate;border-spacing:5px;table-layout:fixed;min-width:520px}
+.sch th{font-weight:600;color:var(--muted);padding:6px 2px;font-size:14px}
+.sch th.pr b{display:block;font-size:20px;color:var(--head);font-variant-numeric:tabular-nums}
+.sch th.pr small{display:block;font-size:11px;font-weight:500;white-space:nowrap}
+.sch th.pr small[data-time]{cursor:pointer;text-decoration:underline dotted}
+.sch th.dy{width:84px;font-size:16px;color:var(--head);background:var(--surface-2);border-radius:12px;padding:0 4px}
+.sch th.corner{width:84px}
+.sch th.today{color:var(--acc-d);background:var(--acc-l)}
+.sch td.c{height:64px;text-align:center;vertical-align:middle;border-radius:12px;background:color-mix(in srgb,var(--sc) 15%,var(--surface));border:1.5px solid color-mix(in srgb,var(--sc) 40%,var(--line));font-size:16px;color:var(--text);padding:2px}
+.sch td.c.empty{background:var(--surface-2);border:1.5px dashed var(--line)}
+.sch td.c b{font-weight:600;display:block;line-height:1.25;overflow-wrap:anywhere}
+.sch td.c i{font-style:normal;color:var(--muted);font-size:22px}
+.sch td[data-cell]{cursor:pointer}
+.sch td[data-cell]:active{transform:scale(.96)}
+.sch td.c.now{box-shadow:0 0 0 3px var(--acc);background:color-mix(in srgb,var(--acc) 22%,var(--surface))}
+.sch .dot,.sch-sj .dot,.sch-pick .dot,.sch-t .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--sc);flex:none}
+.sch-sj .chip,.sch-pick .chip{border-color:color-mix(in srgb,var(--sc) 45%,var(--line))}
+.sch-sj .chip{height:auto;min-height:38px;padding:4px 14px}
+.mini{width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);background:transparent;border:0;padding:0}
+.mini:active{background:var(--surface-3)}
+.mini svg{font-size:16px}
+.sch-t{display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid var(--line)}
+.sch-t:first-child{border-top:0}
+.sch-t .av{width:38px;height:38px;border-radius:50%;background:var(--acc-l);color:var(--acc-d);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-size:17px}
+.sch-t .nm{flex:1;min-width:0}
+.sch-t .nm b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sch-t .nm small{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.sch-t .ac{display:flex;flex:none}
+.sch-add{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.sch-add .field{min-width:0;flex:1 1 100%;height:44px;font-size:15px}
+.sch-add select.field{flex:1 1 140px}
+.sch-add .btn{flex:1 1 90px}
+@container (max-width:600px){
+  table.sch{min-width:470px;border-spacing:3px}
+  .sch th.dy,.sch th.corner{width:58px;font-size:13px}
+  .sch th.pr b{font-size:16px}
+  .sch th.pr small{display:none}
+  .sch td.c{height:54px;font-size:12.5px;border-radius:9px}
+  .sch-card{padding:8px}
+  #schMain{padding-inline:12px}
+  #schMain .app-head .ficon{display:none}
+}
+.sch-pick{max-height:52vh;overflow:auto}
+.sch-pick .chip{height:46px;font-size:16px}
+
+/* ============ تقسيم الشاشة ============ */
+#screens.split .screen.on{inset:auto;top:0;bottom:0;overflow:hidden}
+#screens.split .screen.sp-r{right:0;left:calc((1 - var(--sp,.5))*100% + 3px)}
+#screens.split .screen.sp-l{left:0;right:calc(var(--sp,.5)*100% + 3px)}
+#screens.split .screen.on:not(.sp-act)::after{content:"";position:absolute;inset:0;background:rgba(15,26,54,.07);pointer-events:none;z-index:30}
+#screens.split .screen.sp-act::before{content:"";position:absolute;inset:0;border:3px solid var(--acc);pointer-events:none;z-index:31}
+#spDiv{position:absolute;top:0;bottom:0;right:calc(var(--sp,.5)*100% - 15px);width:30px;z-index:35;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none;cursor:col-resize}
+#spDiv[hidden]{display:none}
+#spDiv .spg{position:absolute;top:0;bottom:0;left:50%;width:6px;margin-left:-3px;background:var(--surface-3);border-radius:4px}
+#spDiv.drag .spg,#spDiv:hover .spg{background:var(--acc)}
+#spDiv .spb{position:relative;display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:6px 3px;box-shadow:var(--shadow);cursor:default}
+#spDiv .spb button{width:34px;height:34px;border-radius:50%;border:0;background:var(--surface-2);color:var(--head);display:flex;align-items:center;justify-content:center;padding:0;font-size:17px}
+#spDiv .spb button:active{background:var(--acc-l)}
+#spDiv [data-sp=swap]::before{content:"⇄";font-size:19px;line-height:1}
+#spDiv [data-sp=x]::before{content:"✕";font-size:15px;line-height:1}
 </style>
 </head>
 <body>
@@ -973,6 +1055,7 @@ html.nocur,html.nocur *{cursor:none!important}
   </header>
 
   <main id="screens">
+    <div id="spDiv" hidden><span class="spg"></span><div class="spb"><button data-sp="swap" title="تبديل الجهتين"></button><button data-sp="x" title="إنهاء التقسيم"></button></div></div>
     <!-- ================= HOME ================= -->
     <section class="screen on" id="home">
       <div class="wall navy" id="homeWall"></div><div class="pattern"></div>
@@ -1099,6 +1182,7 @@ html.nocur,html.nocur *{cursor:none!important}
           <button class="dbtn" id="pClear" title="مسح الكتابة"><svg class="i" data-i="trash"></svg></button>
         </div>
         <span class="grow"></span>
+        <button class="dbtn" data-rpick title="طالب عشوائي"><svg class="i" data-i="dice"></svg></button>
         <button class="dbtn" id="pFull" title="ملء الشاشة"><svg class="i" data-i="fit"></svg></button>
       </div>
     </section>
@@ -1187,6 +1271,9 @@ html.nocur,html.nocur *{cursor:none!important}
       <input type="file" id="atFile" accept=".txt,.csv,text/plain,text/csv" hidden>
     </section>
 
+    <!-- ================= SCHEDULE ================= -->
+    <section class="screen app" id="sched"><div class="main" id="schMain"></div></section>
+
     <!-- ================= GENERIC INSTALLED APP ================= -->
     <section class="screen app" id="gen"><div class="gen" id="genBody"></div></section>
 
@@ -1202,6 +1289,7 @@ html.nocur,html.nocur *{cursor:none!important}
           <button class="nav-btn" data-sec="conn"><svg class="i" data-i="wifi"></svg><span class="txt">الاتصالات</span></button>
           <button class="nav-btn" data-sec="storage"><svg class="i" data-i="hdd"></svg><span class="txt">التخزين</span></button>
           <button class="nav-btn" data-sec="boardset"><svg class="i" data-i="board"></svg><span class="txt">السبورة</span></button>
+          <button class="nav-btn" data-sec="camera"><svg class="i" data-i="camera"></svg><span class="txt">الكاميرا</span></button>
           <button class="nav-btn" data-sec="sound"><svg class="i" data-i="vol"></svg><span class="txt">الصوت والسطوع</span></button>
           <button class="nav-btn" data-sec="time"><svg class="i" data-i="globe"></svg><span class="txt">اللغة والوقت</span></button>
           <button class="nav-btn" data-sec="access"><svg class="i" data-i="eyedrop"></svg><span class="txt">سهولة الاستخدام</span></button>
@@ -1214,6 +1302,7 @@ html.nocur,html.nocur *{cursor:none!important}
         <div class="main" id="setMain">
 
           <div class="sec" data-sec="users" hidden></div>
+          <div class="sec" data-sec="camera" hidden></div>
 
           <div class="sec" data-sec="look">
             <h1 class="h1">الواجهة والألوان</h1><p class="sub">الوضع الليلي والصباحي، ألوان النظام، والخلفية.</p>
@@ -1306,6 +1395,7 @@ html.nocur,html.nocur *{cursor:none!important}
               <div class="row"><span class="lbl">صفحات السبورة الحالية</span><button class="btn danger" id="clearBoards"><svg class="i" data-i="trash"></svg>حذف كل الصفحات</button></div>
             </div>
             <div class="card" id="touchTest"></div>
+            <div class="card" id="inkCard"></div>
             <div class="card" id="camCard"></div>
           </div>
 
@@ -1491,7 +1581,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='2.1.1';
+const OS_VERSION='2.3.0', OS_NAME='AlharthiaOS 2.3';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,
@@ -1678,12 +1768,16 @@ function applyTheme(){
 }
 
 /* ---------------- navigation ---------------- */
-const TITLES={home:'',media:'مشغل الوسائط',term:'الطرفية',cast:'العرض اللاسلكي',apps:'التطبيقات',board:'السبورة',pdf:'قارئ PDF',files:'مستكشف الملفات',office:'المستندات',browser:'Chromium',store:'متجر التطبيقات',timer:'المؤقت',attend:'الحضور والغياب',settings:'الإعدادات',gen:''};
+const TITLES={home:'',media:'مشغل الوسائط',term:'الطرفية',cast:'العرض اللاسلكي',apps:'التطبيقات',board:'السبورة',pdf:'قارئ PDF',files:'مستكشف الملفات',office:'المستندات',browser:'Chromium',store:'متجر التطبيقات',timer:'المؤقت',attend:'الحضور والغياب',sched:'جدول الحصص',settings:'الإعدادات',gen:''};
 let current='home';
 const onShow={}, onHide={};
+/* تقسيم الشاشة: a = الجهة اليمين، b = اليسار، act = البانل الفعّال (الي ينفتح بيه أي تطبيق جديد) */
+const SPL={on:false,a:null,b:null,act:'a'};
+const isShown=id=>current===id||(SPL.on&&(SPL.a===id||SPL.b===id));
 function go(id,arg){
   if(!(id in TITLES)) return;
   closeQP(); window.Board&&Board.closePop&&Board.closePop();
+  if(SPL.on) return Split.go(id,arg);
   if(current!==id){ onHide[current]&&onHide[current](); }
   if(current==='home'&&id!=='home') setDrag(false);
   $$('.screen').forEach(s=>s.classList.toggle('on',s.id===id));
@@ -1712,7 +1806,7 @@ function toggleFullscreen(){
 }
 document.addEventListener('fullscreenchange',()=>{ const f=!!document.fullscreenElement;
   for(const id of ['dFull','pFull']){const b=$('#'+id); if(!b) continue; b.classList.toggle('on',f); const s=b.querySelector('svg'); s.innerHTML=ICONS[f?'exitFull':'fit']; const l=b.querySelector('.lb'); if(l) l.textContent=f?'خروج من ملء الشاشة':'ملء الشاشة';}
-  $('#pdf').classList.toggle('full',f&&current==='pdf');
+  $('#pdf').classList.toggle('full',f&&isShown('pdf'));
 });
 
 /* ---------------- brand layout ---------------- */
@@ -2958,7 +3052,7 @@ const Pdf={
     this.stage.addEventListener('scroll',()=>{ this.onScroll(); },{passive:true});
     this.stage.addEventListener('wheel',e=>{ if(!this.doc||!e.ctrlKey) return; e.preventDefault();
       const r=this.stage.getBoundingClientRect(); this.zoomAt(this.zoom*Math.exp(-e.deltaY*.0025),e.clientX-r.left,e.clientY-r.top); },{passive:false});
-    new ResizeObserver(()=>{ this.sizeInk(); if(this.doc&&current==='pdf') this.relayout(true); }).observe(this.view);
+    new ResizeObserver(()=>{ this.sizeInk(); if(this.doc&&isShown('pdf')) this.relayout(true); }).observe(this.view);
     let hideT=0; $('#pdf').addEventListener('pointermove',e=>{ if(!$('#pdf').classList.contains('full')) return; const bar=$('#pdfBar'); if(innerHeight-e.clientY<120){bar.classList.add('show');clearTimeout(hideT);} else {clearTimeout(hideT);hideT=setTimeout(()=>bar.classList.remove('show'),1200);} });
     this.sizeInk(); this.inkUi(); this.ui();
   },
@@ -3711,7 +3805,7 @@ const Office={
     $('#ofBar').innerHTML=`<button class="dbtn home" data-go="home">${icon('home')}</button><button class="dbtn" data-go="files" title="الملفات">${icon('folder')}</button>
       <button class="dbtn" data-ob="device" title="فتح ملف">${icon('upload')}</button><span class="name">${esc(this.name||'')}</span><span class="grow"></span>${extra.join('')}<span class="grow"></span>
       ${A&&this.name?`<button class="btn sm ghost" data-ob="edit">${icon('edit')}تعديل بـ ${A.lo}</button>`:''}
-      <button class="dbtn" data-ob="full" title="ملء الشاشة">${icon('fit')}</button>`;
+      <button class="dbtn" data-rpick title="طالب عشوائي">${icon('dice')}</button><button class="dbtn" data-ob="full" title="ملء الشاشة">${icon('fit')}</button>`;
   },
   loading(){ $('#ofStage').innerHTML='<div class="empty"><div class="spin"></div>جاري فتح الملف…</div>'; },
   async open(type,buf,name){
@@ -3795,6 +3889,7 @@ const APPS_BUILTIN=[
   {id:'chromium',n:'Chromium',sub:'متصفح الإنترنت',i:'globe',c:'#2f6fe4',go:'browser'},
   {id:'files',n:'مستكشف الملفات',i:'folder',c:'#e6a019',go:'files'},
   {id:'attend',n:'الحضور والغياب',sub:'سجل الطلاب اليومي',i:'attend',c:'#0d9488',go:'attend'},
+  {id:'sched',n:'جدول الحصص',sub:'جدول الأسبوع والمعلمين',i:'table',c:'#7c3aed',go:'sched'},
   {id:'word',n:'مستندات Word',sub:'LibreOffice Writer',i:'word',c:'#2f6fe4',office:'word'},
   {id:'ppt',n:'عروض PowerPoint',sub:'LibreOffice Impress',i:'slides',c:'#c2410c',office:'ppt'},
   {id:'excel',n:'جداول Excel',sub:'LibreOffice Calc',i:'table',c:'#16a34a',office:'excel'},
@@ -4176,7 +4271,7 @@ const Extra={
       </div>
       <div class="card"><h3>${icon('download')}التحديثات</h3>
         ${sw('autoUpdate','تحديث تلقائي خارج وقت الدوام')}
-        <div class="row"><span class="lbl">الإصدار الحالي<span class="hint">Alharthia OS ${OS_VERSION}</span></span><button class="btn" data-x="checkUpd">${icon('restart')}البحث عن تحديثات</button></div>
+        <div class="row"><span class="lbl">الإصدار الحالي<span class="hint">${OS_NAME}</span></span><button class="btn" data-x="checkUpd">${icon('restart')}البحث عن تحديثات</button></div>
       </div>`;
     }
   },
@@ -4404,6 +4499,7 @@ const Attend={
     $('#atMain').addEventListener('input',e=>{ if(e.target.id==='atQ'){ this.q=e.target.value.trim(); this.renderGrid(); } });
     $('#atMain').addEventListener('keydown',e=>{ if(e.target.id==='atName'&&e.key==='Enter'){ e.preventDefault(); this.addOne(); } });
     $('#atFile').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(f) this.addMany(await f.text()); };
+    document.addEventListener('click',e=>{ if(e.target.closest('[data-rpick]')) this.pick(); });
     if(!S.attMig){ S.attMig=true; if(!S.dock.includes('attend')&&S.dock.length<7) S.dock.splice(1,0,'attend'); save(); }
   },
   persist(){ if(!store.set('attendance',this.data)) toast('تعذر حفظ سجل الحضور',false); },
@@ -4517,7 +4613,7 @@ const Attend={
     if(a==='addBulk') this.addMany($('#atBulk').value);
     if(a==='file') $('#atFile').click();
     if(a==='sort'){ C.students.sort((x,y)=>x.name.localeCompare(y.name,'ar')); this.persist(); this.render(); }
-    if(a==='clearAll'&&await confirmBox('حذف كل الطلاب','راح تنحذف كل الأسماء وسجل الحضور لهذا الصف.','حذف الكل',true,'trash')){ C.students=[]; C.records={}; C.notes={}; this.persist(); this.render(); }
+    if(a==='clearAll'&&await confirmBox('حذف كل الطلاب','راح تنحذف كل الأسماء وسجل الحضور لهذا الصف.','حذف الكل',true,'trash')){ C.students=[]; C.records={}; C.notes={}; C.picked=[]; this.persist(); this.render(); }
     if(a==='allP'){ C.students.forEach(s=>r[s.id]='p'); this.persist(); this.refreshDay(); toast('تم تسجيل الكل حاضرين'); }
     if(a==='restP'){ C.students.forEach(s=>{ if(!r[s.id]) r[s.id]='p'; }); this.persist(); this.refreshDay(); }
     if(a==='clearDay'&&await confirmBox('مسح تسجيل اليوم','راح ينمسح تسجيل الحضور لهذا اليوم فقط.','مسح',true,'trash')){ delete C.records[this.date]; this.persist(); this.refreshDay(); }
@@ -4528,16 +4624,142 @@ const Attend={
     if(a==='del'&&await confirmBox('حذف الصف',`تريد تحذف «${esc(C.name)}» مع كل الطلاب والسجل؟`,'حذف',true,'trash')){ this.data.classes=this.data.classes.filter(x=>x!==C); this.data.cur=this.data.classes[0].id; this.persist(); this.render(); }
     if(a==='pick') this.pick();
   },
+  /* اختيار طالب عشوائي — الأسماء اللي انختارت ما تنعاد لين الـ Reset */
   pick(){
     const C=this.cls, r=C.records[this.date]||{};
-    let pool=C.students.filter(s=>r[s.id]==='p'||r[s.id]==='l'); if(!pool.length) pool=C.students.filter(s=>r[s.id]!=='a'&&r[s.id]!=='e');
-    if(!pool.length){ toast('ماكو طلاب حاضرين',false); return; }
-    modal({title:'اختيار طالب عشوائي',iconName:'dice',body:'<div class="pick-name" id="pkN">…</div>',actions:[{label:'مرة ثانية',val:'again',cls:'ghost'},{label:'تم',val:null,cls:'primary'}],
-      onOpen:ov=>{ let n=0; const el=$('#pkN',ov); const spin=()=>{ el.textContent=pool[Math.floor(Math.random()*pool.length)].name; if(++n<18) setTimeout(spin,50+n*9); else beep(1,880); }; spin(); }
-    }).then(v=>{ if(v==='again') this.pick(); });
+    if(!C.students.length){ toast('ضيف أسماء الطلاب من تطبيق الحضور أول',false); return; }
+    const ids=new Set(C.students.map(s=>s.id)); C.picked=(C.picked||[]).filter(i=>ids.has(i));
+    const done=new Set(C.picked);
+    let all=C.students.filter(s=>r[s.id]==='p'||r[s.id]==='l'); if(!all.length) all=C.students.filter(s=>r[s.id]!=='a'&&r[s.id]!=='e');
+    const pool=all.filter(s=>!done.has(s.id));
+    const left=pool.length-1;
+    const resetBtn={label:icon('undo')+'Reset — تصفير',val:'reset',cls:'ghost'};
+    if(!pool.length){
+      modal({title:'اختيار طالب عشوائي',iconName:'dice',body:`<div class="pick-name" style="font-size:30px">${all.length?'كل الطلاب انختاروا':'ماكو طلاب حاضرين'}</div><p style="text-align:center;opacity:.7">اضغط Reset حتى ترجع كل الأسماء تنختار من جديد</p>`,actions:[resetBtn,{label:'تم',val:null,cls:'primary'}]})
+        .then(v=>{ if(v==='reset') this.pickReset(true); });
+      return;
+    }
+    const chosen=pool[Math.floor(Math.random()*pool.length)];
+    C.picked.push(chosen.id); this.persist();
+    modal({title:'اختيار طالب عشوائي',iconName:'dice',body:`<div class="pick-name" id="pkN">…</div><p id="pkL" style="text-align:center;opacity:.7;margin:0">باقي ${nf(left)} من ${nf(all.length)}</p>`,
+      actions:[resetBtn,{label:'مرة ثانية',val:'again',cls:'ghost'},{label:'تم',val:null,cls:'primary'}],
+      onOpen:ov=>{ let n=0; const el=$('#pkN',ov); const spin=()=>{ if(!el.isConnected) return; if(++n<18){ el.textContent=all[Math.floor(Math.random()*all.length)].name; setTimeout(spin,50+n*9); } else { el.textContent=chosen.name; beep(1,880); } }; spin(); }
+    }).then(v=>{ if(v==='again') this.pick(); else if(v==='reset') this.pickReset(true); });
+  },
+  pickReset(again){
+    const C=this.cls; C.picked=[]; this.persist(); toast('تم تصفير الأسماء — الكل يرجع ينختار');
+    if(again) this.pick();
   }
 };
 onShow.attend=()=>Attend.render();
+/* =====================================================================
+   SCHEDULE — جدول الحصص (يظهر لكل المستخدمين، والتعديل للأستاذ والمطوّر فقط)
+   قائمة مواد وحدة تنختار منها الحصص + قائمة معلمين تضيفهم بنفسك.
+   ===================================================================== */
+const SCH_DAYS=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس'];
+const SCH_COL=['#2563eb','#16a34a','#d97706','#9333ea','#0d9488','#e11d48','#0891b2','#c2410c','#4f46e5','#65a30d','#db2777','#475569','#b45309','#0f766e'];
+const SCH_TIMES=['8:00 - 8:45','9:00 - 9:45','10:00 - 10:45','11:00 - 11:45','12:00 - 12:45','13:00 - 13:45','14:00 - 14:45'];
+const SCH_SUBJ=['احياء','رياضة','فرنسي','رياضيات','اجتماعيات','عربي','كيمياء','اسلامية','انكليزي','فيزياء','فنية'];
+/* الجدول الأصلي (الثالث المتوسط -ج-) — الصف = اليوم، العمود = رقم الحصة */
+const SCH_GRID=[
+  ['احياء','رياضة','فرنسي','رياضيات','اجتماعيات','عربي','كيمياء'],
+  ['عربي','اسلامية','كيمياء','انكليزي','رياضيات','فنية','اجتماعيات'],
+  ['انكليزي','كيمياء','رياضيات','فيزياء','فرنسي','احياء','عربي'],
+  ['عربي','فيزياء','رياضيات','اجتماعيات','احياء','فنية','انكليزي'],
+  ['انكليزي','فيزياء','عربي','اسلامية','اجتماعيات','رياضيات','']
+];
+const Sched={
+  data:null, tick:0,
+  fresh(){
+    const subjects=SCH_SUBJ.map((n,i)=>({id:'s'+(i+1),name:n}));
+    const id=n=>(subjects.find(s=>s.name===n)||{}).id||'';
+    const cells={}; SCH_GRID.forEach((row,d)=>row.forEach((n,p)=>{ if(n) cells[d+'-'+p]=id(n); }));
+    return {title:'',subjects,teachers:[],times:SCH_TIMES.slice(),cells};
+  },
+  init(){
+    this.data=store.get('timetable',null)||this.fresh();
+    const m=$('#schMain');
+    m.addEventListener('click',e=>this.onClick(e));
+    m.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.id==='schTn'){ e.preventDefault(); this.addTeacher(); } });
+    setInterval(()=>{ if(isShown('sched')) this.mark(); },30e3);
+    if(!S.schMig){ S.schMig=true; if(!S.dock.includes('sched')&&S.dock.length<8) S.dock.splice(2,0,'sched'); save(); }
+  },
+  persist(){ if(!store.set('timetable',this.data)) toast('تعذر حفظ الجدول',false); },
+  canEdit(){ return typeof Role==='undefined'||!Role.is('student'); },
+  sub(id){ return this.data.subjects.find(s=>s.id===id); },
+  col(id){ const i=this.data.subjects.findIndex(s=>s.id===id); return SCH_COL[(i<0?0:i)%SCH_COL.length]; },
+  /* اليوم والحصة الحالية */
+  now(){
+    const t=tzNow(), d=t.getDay(), dayIdx=d===0?0:(d>=1&&d<=4?d:-1); // الأحد=0 … الخميس=4
+    const mins=t.getHours()*60+t.getMinutes(); let per=-1;
+    this.data.times.forEach((s,i)=>{ const m=String(s).match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/); if(!m) return; const a=+m[1]*60+ +m[2], b=+m[3]*60+ +m[4]; if(mins>=a&&mins<b) per=i; });
+    return {day:dayIdx,per};
+  },
+  mark(){
+    const n=this.now(); $$('#schMain .sch td.c, #schMain .sch th.dy, #schMain .sch th.pr').forEach(x=>x.classList.remove('now','today'));
+    $$('#schMain .sch tr[data-d]').forEach(r=>{ const d=+r.dataset.d; r.querySelector('th.dy').classList.toggle('today',d===n.day);
+      $$('td.c',r).forEach(td=>td.classList.toggle('now',d===n.day&&+td.dataset.p===n.per)); });
+    $$('#schMain .sch th.pr').forEach(th=>th.classList.toggle('today',+th.dataset.p===n.per&&n.day>=0));
+  },
+  render(){
+    const D=this.data, ed=this.canEdit(), np=D.times.length;
+    const head=`<div class="app-head"><span class="ficon" style="--c:#7c3aed;width:56px;height:56px">${icon('table')}</span><div><h1 class="h1">جدول الحصص</h1><p class="sub" style="margin:0">${esc(D.title||S.cls||'')}${ed?'':' — عرض فقط'}</p></div><span class="grow"></span>
+      ${ed?`<button class="btn sm ghost" data-sch="title">${icon('edit')}اسم الجدول</button><button class="btn sm ghost danger" data-sch="reset">${icon('restart')}الجدول الأصلي</button>`:`<span class="note">${icon('info')}التعديل من الأستاذ أو المطوّر فقط</span>`}</div>`;
+    const rows=SCH_DAYS.map((dn,d)=>`<tr data-d="${d}"><th class="dy">${dn}</th>${D.times.map((_,p)=>{ const sid=D.cells[d+'-'+p], sj=sid&&this.sub(sid);
+      return `<td class="c${sj?'':' empty'}" data-p="${p}" ${ed?`data-cell="${d}-${p}" tabindex="0"`:''} style="--sc:${sj?this.col(sid):'transparent'}">${sj?`<b>${esc(sj.name)}</b>`:(ed?'<i>+</i>':'')}</td>`; }).join('')}</tr>`).join('');
+    const thead=`<tr><th class="corner"></th>${D.times.map((t,p)=>`<th class="pr" data-p="${p}"><b>${nf(p+1)}</b><small ${ed?`data-time="${p}"`:''}><span dir="ltr">${esc(t)}</span></small></th>`).join('')}</tr>`;
+    const subj=`<div class="card"><h3>${icon('doc')}قائمة الدروس (${nf(D.subjects.length)})</h3><div class="chips sch-sj">${D.subjects.map(s=>`<span class="chip" style="--sc:${this.col(s.id)}"><i class="dot"></i>${esc(s.name)}${ed?`<button class="mini" data-sren="${s.id}" title="تعديل">${icon('edit')}</button><button class="mini" data-sdel="${s.id}" title="حذف">${icon('x')}</button>`:''}</span>`).join('')||'<span class="note">ماكو دروس</span>'}</div>
+      ${ed?`<div class="btns" style="margin-top:12px"><button class="btn sm" data-sch="addS">${icon('plus')}إضافة درس</button></div>`:''}</div>`;
+    const tch=`<div class="card"><h3>${icon('users')}المعلمون (${nf(D.teachers.length)})</h3>
+      ${D.teachers.length?`<div class="sch-tl">${D.teachers.map(t=>{ const sj=t.subj&&this.sub(t.subj); return `<div class="sch-t"><span class="av">${esc(t.name.trim().charAt(0)||'؟')}</span><div class="nm"><b>${esc(t.name)}</b>${sj?`<small><i class="dot" style="--sc:${this.col(sj.id)}"></i>${esc(sj.name)}</small>`:''}</div>
+        ${ed?`<span class="ac"><button class="mini" data-tsub="${t.id}" title="المادة">${icon('doc')}</button><button class="mini" data-tren="${t.id}" title="تعديل الاسم">${icon('edit')}</button><button class="mini" data-tdel="${t.id}" title="حذف">${icon('trash')}</button></span>`:''}</div>`; }).join('')}</div>`
+        :`<div class="note" style="padding:6px 2px">${ed?'ما أضفت أي معلم بعد — اكتب الاسم تحت واضغط إضافة.':'ماكو معلمين مضافين.'}</div>`}
+      ${ed?`<div class="sch-add"><input class="field" id="schTn" type="text" placeholder="اسم المعلم" autocomplete="off"><select class="field" id="schTs"><option value="">— المادة (اختياري) —</option>${D.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select><button class="btn primary" data-sch="addT">${icon('plus')}إضافة</button></div>`:''}</div>`;
+    $('#schMain').innerHTML=`${head}<div class="sch-wrap"><div class="card sch-card"><div class="sch-scroll"><table class="sch">${thead}${rows}</table></div>${ed?`<p class="note" style="margin:12px 0 0">${icon('info')}اضغط أي خانة حتى تختار الدرس، واضغط الوقت حتى تعدله.</p>`:''}</div><div class="sch-side">${subj}${tch}</div></div>`;
+    this.mark();
+  },
+  /* اختيار درس من القائمة — يرجّع id أو '' (فارغ) أو null (إلغاء) */
+  pickSubject(title,{empty=true,cur=''}={}){
+    const D=this.data;
+    return modal({title,iconName:'table',wide:false,
+      body:`<div class="chips sch-pick">${D.subjects.map(s=>`<button class="chip${s.id===cur?' on':''}" data-pk="${s.id}" style="--sc:${this.col(s.id)}"><i class="dot"></i>${esc(s.name)}</button>`).join('')}
+        <button class="chip" data-pk="__new" style="border-style:dashed">${icon('plus')}درس جديد</button>${empty?`<button class="chip" data-pk="__none">${icon('x')}فارغ</button>`:''}</div>`,
+      actions:[{label:'إلغاء',val:null,cls:'ghost'}],
+      onOpen:(ov,done)=>{ ov.querySelector('.mb').addEventListener('click',async e=>{ const b=e.target.closest('[data-pk]'); if(!b) return; const k=b.dataset.pk;
+        if(k==='__none') return done('');
+        if(k==='__new'){ const n=await promptBox('اسم الدرس الجديد','','مثلاً: حاسوب'); if(!n) return; return done(this.addSubject(n)); }
+        done(k); }); }});
+  },
+  addSubject(n){ n=String(n).trim(); const ex=this.data.subjects.find(s=>s.name===n); if(ex) return ex.id;
+    const ids=this.data.subjects.map(s=>+String(s.id).slice(1)||0), id='s'+(Math.max(0,...ids)+1); this.data.subjects.push({id,name:n}); this.persist(); return id; },
+  addTeacher(){
+    const i=$('#schTn'); if(!i) return; const n=i.value.trim(); if(!n){ i.focus(); return; }
+    if(this.data.teachers.some(t=>t.name===n)){ toast('الاسم موجود مسبقاً',false); return; }
+    const sv=$('#schTs').value; this.data.teachers.push({id:uid(),name:n,subj:sv||''}); this.persist(); this.render(); toast('تمت إضافة '+n);
+    const n2=$('#schTn'); n2&&n2.focus();
+  },
+  async onClick(e){
+    const D=this.data; if(!this.canEdit()) return;
+    const cell=e.target.closest('[data-cell]');
+    if(cell){ const [d,p]=cell.dataset.cell.split('-'), k=d+'-'+p; const v=await this.pickSubject(`${SCH_DAYS[d]} — الحصة ${nf(+p+1)}`,{cur:D.cells[k]||''});
+      if(v===null) return; if(v==='') delete D.cells[k]; else D.cells[k]=v; this.persist(); this.render(); return; }
+    const tm=e.target.closest('[data-time]'); if(tm){ const p=+tm.dataset.time; const v=await promptBox(`وقت الحصة ${nf(p+1)}`,D.times[p],'8:00 - 8:45'); if(v){ D.times[p]=v; this.persist(); this.render(); } return; }
+    const b=e.target.closest('[data-sch]');
+    if(b){ const a=b.dataset.sch;
+      if(a==='addS'){ const n=await promptBox('اسم الدرس الجديد','','مثلاً: حاسوب'); if(n){ this.addSubject(n); this.render(); } }
+      if(a==='addT') this.addTeacher();
+      if(a==='title'){ const n=await promptBox('اسم الجدول',D.title||S.cls||'',S.cls); if(n!==null){ D.title=n; this.persist(); this.render(); } }
+      if(a==='reset'&&await confirmBox('الجدول الأصلي','راح يرجع الجدول والدروس لنسخة الثالث المتوسط -ج- الأصلية. أسماء المعلمين تبقى.','رجوع للأصلي',true,'restart')){ const f=this.fresh(); D.subjects=f.subjects; D.cells=f.cells; D.times=f.times; D.teachers.forEach(t=>t.subj=''); this.persist(); this.render(); toast('رجع الجدول الأصلي'); }
+      return; }
+    const sr=e.target.closest('[data-sren]'); if(sr){ const s=this.sub(sr.dataset.sren); const n=await promptBox('تعديل اسم الدرس',s.name); if(n){ s.name=n; this.persist(); this.render(); } return; }
+    const sd=e.target.closest('[data-sdel]'); if(sd){ const s=this.sub(sd.dataset.sdel); if(await confirmBox('حذف درس',`تريد تحذف «${esc(s.name)}»؟ راح تنمسح من خانات الجدول.`,'حذف',true,'trash')){
+      D.subjects=D.subjects.filter(x=>x!==s); for(const k of Object.keys(D.cells)) if(D.cells[k]===s.id) delete D.cells[k]; D.teachers.forEach(t=>{ if(t.subj===s.id) t.subj=''; }); this.persist(); this.render(); } return; }
+    const tr=e.target.closest('[data-tren]'); if(tr){ const t=D.teachers.find(x=>x.id===tr.dataset.tren); const n=await promptBox('اسم المعلم',t.name); if(n){ t.name=n; this.persist(); this.render(); } return; }
+    const ts=e.target.closest('[data-tsub]'); if(ts){ const t=D.teachers.find(x=>x.id===ts.dataset.tsub); const v=await this.pickSubject('مادة '+t.name,{cur:t.subj||''}); if(v!==null){ t.subj=v; this.persist(); this.render(); } return; }
+    const td=e.target.closest('[data-tdel]'); if(td){ const t=D.teachers.find(x=>x.id===td.dataset.tdel); if(await confirmBox('حذف معلم',`تريد تحذف «${esc(t.name)}» من القائمة؟`,'حذف',true,'trash')){ D.teachers=D.teachers.filter(x=>x!==t); this.persist(); this.render(); } return; }
+  }
+};
+onShow.sched=()=>Sched.render();
 
 /* =====================================================================
    MEDIA PLAYER — mp4 / mp3 (and webm, mkv, wav, ogg, m4a…)
@@ -4616,6 +4838,7 @@ const Media={
           ${multi?`<button class="tbtn${this.showList?' on':''}" data-md="list" title="قائمة التشغيل">${icon('list')}</button>`:''}
           <button class="tbtn" data-md="pick" title="فتح ملف">${icon('folder')}</button>
           ${window.Native&&Native.on?`<button class="tbtn" data-md="ext" title="فتح بمشغل الوسائط الكامل">${icon('external')}</button>`:''}
+          <button class="tbtn" data-rpick title="طالب عشوائي">${icon('dice')}</button>
           <button class="tbtn" data-md="full" title="ملء الشاشة">${icon('fit')}</button>
         </div>
       </div>`;
@@ -4965,7 +5188,7 @@ const Term={
   },
   init(){
     $('#term').addEventListener('click',e=>this.onBar(e));
-    new ResizeObserver(()=>{ if(current==='term') this.fitAll(); }).observe($('#termBody'));
+    new ResizeObserver(()=>{ if(isShown('term')) this.fitAll(); }).observe($('#termBody'));
   }
 };
 onShow.term=()=>Term.show();
@@ -4981,6 +5204,7 @@ ICONS.semi='<path d="M3 16h18"/><path d="M21 16a9 9 0 0 0-18 0"/>';
 ICONS.square='<rect x="4" y="4" width="16" height="16" rx="1"/>';
 ICONS.penScreen='<path d="M4 20h16"/><path d="m14.5 3.5 6 6L9 21H3v-6z"/>';
 ICONS.camera='<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>';
+ICONS.split='<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>';
 ICONS.grip='<circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/>';
 ICONS.exit='<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"/><path d="m16 16 4-4-4-4"/><path d="M20 12H10"/>';
 const SIDE_SHAPES=[['line','خط مستقيم','line'],['semi','نصف دائرة','semi'],['circle','دائرة','circle'],['rect','مربع / مستطيل','square'],['triangle','مثلث','triangle']];
@@ -5046,7 +5270,7 @@ const Side={
   hide(){ this.open=false; this.closePop(); $('#sidePanel').hidden=true; $$('#sideWrap .side-h').forEach(h=>h.classList.remove('hide')); },
   mainTools(){
     return [{k:'files',t:'الملفات',i:'folder'},{k:'bt',t:'البلوتوث',i:'bluetooth'},{k:'board',t:'السبورة',i:'board'},
-      {k:'shot',t:'لقطة شاشة',i:'camera'},{k:'cast',t:'العرض اللاسلكي',i:'cast'},null,
+      {k:'shot',t:'لقطة شاشة',i:'camera'},{k:'cast',t:'العرض اللاسلكي',i:'cast'},{k:'split',t:'تقسيم الشاشة',i:'split',on:SPL.on||!!Split.nat},null,
       {k:'annot',t:'الكتابة فوق الشاشة',i:'penScreen'},null,{k:'close',t:'إغلاق القائمة',i:'x'}];
   },
   drawTools(){
@@ -5081,6 +5305,7 @@ const Side={
       case 'clear': Board.clearPage(); break;
       case 'exit': Annot.exit(); this.show(this.side); break;
       case 'cast': Annot.exit(); this.hide(); go('cast'); break;
+      case 'split': Annot.exit(); this.hide(); Split.toggle(); break;
       case 'shot': Shot.take(); break;
       case 'close': this.hide(); break;
     }
@@ -5259,6 +5484,111 @@ const Shot={
       if(b.dataset.shot==='folder'){ go('files'); Files.open('internal','pics'); }
       if(b.dataset.shot==='open'&&path) openFile(nodeOf({path,name:name||path.split('/').pop(),size:0,mtime:Date.now()})); };
     clearTimeout(this.hideT); this.hideT=setTimeout(()=>{ el.hidden=true; },12000);
+  }
+};
+/* =====================================================================
+   SPLIT SCREEN — تقسيم الشاشة
+   • أي تطبيقين من تطبيقات الواجهة (سبورة، PDF، ملفات، جدول، متصفح، إعدادات…) جنب بعض، وكل واحد يشتغل بالكامل.
+   • اضغط على أي نصف حتى يصير هو الفعّال؛ أي تطبيق تفتحه (من قائمة التطبيقات أو الأزرار) ينفتح بالنصف الفعّال.
+   • البرامج الخارجية (Chromium، LibreOffice، …) تنثبّت بنص الشاشة والواجهة بالنص الثاني (عن طريق labwc).
+   ===================================================================== */
+const Split={
+  nat:null,           // 'left' | 'right' إذا كان برنامج خارجي ثابت بنص الشاشة
+  init(){
+    const sc=$('#screens'), dv=$('#spDiv');
+    sc.addEventListener('pointerdown',e=>{
+      if(!SPL.on||e.target.closest('#spDiv')) return;
+      const p=e.target.closest('.screen.sp-r,.screen.sp-l'); if(p) this.focus(p.classList.contains('sp-r')?'a':'b');
+    },true);
+    dv.addEventListener('pointerdown',e=>{ if(!e.target.closest('[data-sp]')) this.drag(e); });
+    dv.addEventListener('click',e=>{ const b=e.target.closest('[data-sp]'); if(!b) return; if(b.dataset.sp==='swap') this.swap(); else this.exit(); });
+    addEventListener('resize',()=>{ if(SPL.on) this.apply(); });
+  },
+  other(s){ return s==='a'?'b':'a'; },
+  toggle(){
+    if(this.nat){ this.restoreNative(); return; }
+    if(SPL.on) this.menu(); else this.enter();
+  },
+  enter(){
+    if(current==='home'){ toast('افتح تطبيق أول، بعدين اضغط «تقسيم الشاشة»'); return; }
+    if(current==='gen'){ toast('هذا التطبيق ما يدعم التقسيم',false); return; }
+    SPL.on=true;
+    if(current==='apps'){ SPL.a='apps'; SPL.b='board'; SPL.act='a'; }
+    else { SPL.a=current; SPL.b='apps'; SPL.act='b'; }
+    current=SPL[SPL.act]; this.apply();
+    onShow.apps&&onShow.apps();
+    toast(SPL.act==='b'?'اختر التطبيق الثاني من القائمة':'اختر التطبيق من القائمة');
+  },
+  async menu(){
+    const v=await modal({title:'تقسيم الشاشة',iconName:'split',body:`<p>اضغط أي نصف حتى يصير فعّال، وأي تطبيق تفتحه ينفتح بيه. اسحب الخط الأوسط لتغيير العرض.</p>`,
+      actions:[{label:'إلغاء',val:null,cls:'ghost'},{label:'تبديل الجهتين',val:'swap',cls:'ghost'},{label:'إبقاء اليمين فقط',val:'a',cls:''},{label:'إبقاء اليسار فقط',val:'b',cls:''},{label:'إنهاء التقسيم',val:'x',cls:'primary'}]});
+    if(v==='swap') this.swap(); else if(v==='a'||v==='b') this.exit(v); else if(v==='x') this.exit();
+  },
+  /* التنقل أثناء التقسيم — يستبدل التطبيق بالنصف الفعّال */
+  go(id,arg){
+    if(id==='home'){ this.exit(); return go('home'); }
+    const me=SPL.act, ot=this.other(me);
+    if(SPL[ot]===id&&SPL[me]!==id){ this.focus(ot); onShow[id]&&onShow[id](arg); return; }
+    const old=SPL[me];
+    if(old!==id&&old){ onHide[old]&&onHide[old](); }
+    SPL[me]=id; current=id; this.apply(); onShow[id]&&onShow[id](arg);
+  },
+  focus(side){
+    if(SPL.act===side&&current===SPL[side]) return;
+    SPL.act=side; current=SPL[side]; this.apply();
+  },
+  swap(){ [SPL.a,SPL.b]=[SPL.b,SPL.a]; SPL.act=this.other(SPL.act); this.apply(); },
+  exit(keep){
+    if(!SPL.on) return;
+    const side=keep||SPL.act, k=SPL[side], drop=SPL[this.other(side)];
+    SPL.on=false; $('#screens').classList.remove('split'); $('#spDiv').hidden=true;
+    $$('.screen').forEach(s=>s.classList.remove('sp-r','sp-l','sp-act'));
+    current=drop; go(k);
+    window.Side&&Side.open&&Side.show(Side.side);
+  },
+  apply(){
+    const sc=$('#screens'); sc.classList.add('split');
+    const W=sc.clientWidth||innerWidth, mn=Math.max(.22,Math.min(.45,330/W));
+    S.splitRatio=clamp(S.splitRatio||.5,mn,1-mn);
+    sc.style.setProperty('--sp',S.splitRatio);
+    $$('.screen').forEach(s=>{
+      const on=s.id===SPL.a||s.id===SPL.b;
+      s.classList.toggle('on',on); s.classList.toggle('sp-r',on&&s.id===SPL.a); s.classList.toggle('sp-l',on&&s.id===SPL.b);
+      s.classList.toggle('sp-act',on&&s.id===current);
+    });
+    $('#spDiv').hidden=false;
+    $('#tbHome').hidden=false; $('#tbApps').hidden=current==='apps'; $('#tbMark').hidden=true; $('#tbTitle').hidden=false;
+    $('#tbTitle').textContent=TITLES[current]||'';
+    $('#os').classList.toggle('immersive',[SPL.a,SPL.b].every(id=>$('#'+id).hasAttribute('data-immersive')));
+    requestAnimationFrame(()=>window.dispatchEvent(new Event('alh-split')));
+  },
+  drag(e){
+    e.preventDefault(); const sc=$('#screens'), r=sc.getBoundingClientRect(), dv=$('#spDiv'); dv.classList.add('drag');
+    const mv=ev=>{ const W=r.width, mn=Math.max(.22,Math.min(.45,330/W)); S.splitRatio=clamp((r.right-ev.clientX)/W,mn,1-mn); sc.style.setProperty('--sp',S.splitRatio); };
+    const up=()=>{ removeEventListener('pointermove',mv); removeEventListener('pointerup',up); dv.classList.remove('drag'); save(); this.apply(); };
+    addEventListener('pointermove',mv); addEventListener('pointerup',up);
+  },
+
+  /* ---------- البرامج الخارجية (Chromium / LibreOffice / …) ---------- */
+  real(){ return !!(window.ALH_HOST||(window.Native&&Native.on)); },
+  /* يُستدعى قبل فتح برنامج خارجي: إذا كان التقسيم شغّال نخلي البانل الي نبقيه، والبرنامج ياخذ النص الثاني. يرجّع true إذا انثبّت. */
+  nativeOn(){
+    if(!SPL.on||!this.real()) return false;
+    const act=SPL[SPL.act], keepSide=act==='apps'?this.other(SPL.act):SPL.act;
+    this.nat=keepSide==='a'?'left':'right';          // الواجهة تبقى بجهة اليمين إذا بقى البانل a
+    this.exit(keepSide);
+    if(window.ALH_HOST) console.log('ALHCMD:'+JSON.stringify({cmd:'unfull'}));
+    API.post('/api/split/snap',{side:this.nat}).catch(e=>toast(errMsg(e),false));
+    if(window.Side&&Side.open) Side.show(Side.side);
+    toast('البرنامج راح ينفتح بنص الشاشة');
+    return true;
+  },
+  restoreNative(){
+    this.nat=null;
+    API.post('/api/split/restore',{}).catch(()=>{});
+    setTimeout(()=>{ if(window.ALH_HOST) console.log('ALHCMD:'+JSON.stringify({cmd:'full'})); },900);
+    if(window.Side&&Side.open) Side.show(Side.side);
+    toast('رجعت الواجهة لملء الشاشة');
   }
 };
 
@@ -5739,6 +6069,211 @@ const CamAssist={
 };
 
 /* =====================================================================
+   شاشة الكاميرا بالإعدادات — بث مباشر من كاميرا USB (مثل PS3 Eye)
+   ===================================================================== */
+const CamView={
+  st:null, poll:0, sig:'', mirror:false, ph:'',
+  el(){ return $('#setMain .sec[data-sec=camera]'); },
+  stop(){ clearInterval(this.poll); this.poll=0; const im=$('#cvImg'); if(im){ im.removeAttribute('src'); } },
+  async render(){
+    const el=this.el(); if(!el) return; this.mirror=!!S.camMirror;
+    const head=`<h1 class="h1">الكاميرا</h1><p class="sub">اربط كاميرا USB أو كاميرا الراسبيري بالشريط وشوف الصورة مباشرة.</p>`;
+    if(!(window.Native&&Native.on)){ el.innerHTML=head+`<div class="card"><div class="cam-note">${icon('info')}<span>الكاميرا تشتغل على جهاز الصف نفسه (مو بمعاينة المتصفح).</span></div></div>`; paintIcons(el); return; }
+    el.innerHTML=head+`<div class="card"><div class="empty"><div class="spin"></div>جاري البحث عن الكاميرا…</div></div>`;
+    await this.load(true);
+    clearInterval(this.poll); this.poll=setInterval(()=>{ if(isShown('settings')&&this.el()&&!this.el().hidden) this.load(false); else this.stop(); },3000);
+  },
+  async load(first){
+    let s; try{ s=await API.get('/api/cam'); }catch(e){ s=null; }
+    this.st=s;
+    // كاميرا وحدة موصولة وما مختارة؟ نختارها لوحدنا
+    if(s&&s.cv&&!s.id&&s.cams.length===1){ try{ this.st=s=await API.post('/api/cam',{id:s.cams[0].id}); }catch(e){} }
+    const sig=s?JSON.stringify([s.cams.map(c=>c.id),s.id,s.connected,s.cv]):'x';
+    if(first||sig!==this.sig){ this.sig=sig; this.draw(); } else this.status();
+  },
+  status(){
+    const s=this.st, b=$('#cvStat'); if(!b||!s) return;
+    const txt=s.error?s.error:s.running?`شغالة — ${nf(Math.round(s.fps||0))} صورة/ثانية${s.size&&s.size[0]?` · ${nf(s.size[0])}×${nf(s.size[1])}`:''}`:'متوقفة';
+    b.textContent=txt; b.classList.toggle('ok',!!(s.running&&!s.error));
+  },
+  draw(){
+    const el=this.el(); if(!el) return; const s=this.st;
+    const head=`<h1 class="h1">الكاميرا</h1><p class="sub">اربط كاميرا USB أو كاميرا الراسبيري بالشريط وشوف الصورة مباشرة.</p>`;
+    if(!s){ el.innerHTML=head+`<div class="card"><div class="cam-note">${icon('info')}تعذر الاتصال بخدمة الكاميرا.</div><div class="btns" style="margin-top:12px"><button class="btn" data-cv="reload">${icon('restart')}إعادة المحاولة</button></div></div>`; paintIcons(el); this.bind(); return; }
+    const cur=s.cams.find(c=>c.id===s.id);
+    const opts=[`<option value="">— اختر كاميرا —</option>`].concat(s.cams.map(k=>`<option value="${esc(k.id)}" ${k.id===s.id?'selected':''}>${esc(k.name)}</option>`));
+    const live=!!(s.cv&&cur);
+    const note=!s.cv?`<div class="cam-note">${icon('info')}<span>عرض الكاميرا يحتاج مكتبة OpenCV. تنزل وحدها مع التحديث، أو بالطرفية: <code dir="ltr">sudo apt install python3-opencv</code></span></div>`
+      :!s.cams.length?`<div class="cam-note">${icon('info')}<span>ماكو كاميرا موصولة. وصّل كاميرا USB أو كاميرا الشريط (والجهاز مطفي) وراح تطلع هنا لحالها.</span></div>`
+      :!cur?`<div class="cam-note">${icon('info')}<span>اختر الكاميرا من القائمة حتى تبدي الصورة.</span></div>`:'';
+    const csi=cur&&cur.vidpid==='csi'?`<div class="cam-note">${icon('info')}<span>كاميرا الشريط (CSI): إذا ركّبتها فوك الصبورة وطلعت الصورة مقلوبة اضغط «تدوير».${/noir/i.test(cur.name)?' كاميرا NoIR ألوانها تطلع وردية شوية — هذا طبيعي.':''}</span></div>`:'';
+    const eye=cur&&/PlayStation Eye/i.test(cur.name)?`<div class="cam-note">${icon('info')}<span>PS3 Eye: على العدسة حلقة بنقطتين — خلي النقطة <b>الزرقاء</b> (زاوية واسعة) حتى تشوف الشاشة كلها.</span></div>`:'';
+    el.innerHTML=head+`<div class="card">
+      <div class="row"><label>الكاميرا<span class="hint">${s.cams.length?'كل الكاميرات الموصولة (USB أو الشريط)':'ماكو كاميرا موصولة'}</span></label>
+        <select class="field" data-cv="sel">${opts.join('')}</select><button class="btn sm ghost" data-cv="scan" title="تحديث">${icon('restart')}</button></div>
+      ${note}${eye}${csi}
+      ${live?`<div class="cv-box${this.mirror?' mir':''}${S.camRot?' rot':''}" id="cvBox"><img id="cvImg" alt=""><div class="cv-err" id="cvErr" hidden></div>
+        <div class="cv-bar"><b class="cam-st" id="cvStat">…</b><span class="grow"></span>
+          <button class="btn sm" data-cv="mir">${icon('swap')}قلب الصورة</button>
+          <button class="btn sm" data-cv="rot">${icon('restart')}تدوير</button>
+          <button class="btn sm" data-cv="snap">${icon('camera')}التقاط صورة</button>
+          <button class="btn sm" data-cv="full">${icon('fit')}ملء الشاشة</button></div></div>`:''}
+    </div>`;
+    paintIcons(el); this.bind(); this.status();
+    if(live) this.play(); 
+  },
+  play(){
+    const im=$('#cvImg'); if(!im) return; const err=$('#cvErr');
+    im.onload=()=>{ err.hidden=true; const bx=$('#cvBox'); if(bx&&im.naturalWidth) bx.style.aspectRatio=im.naturalWidth+'/'+im.naturalHeight; };
+    im.onerror=()=>{ err.hidden=false; err.innerHTML=`${icon('info')}<span>${esc((this.st&&this.st.error)||'ما وصلت صورة من الكاميرا')}</span><button class="btn sm" data-cv="retry">إعادة المحاولة</button>`; paintIcons(err); };
+    im.src='/api/cam/stream?t='+encodeURIComponent(API.tok||'')+'&r='+Date.now();
+  },
+  bind(){
+    const el=this.el(); if(!el||el._cvb) return; el._cvb=true;
+    el.addEventListener('change',async e=>{ const sel=e.target.closest('[data-cv=sel]'); if(!sel) return;
+      try{ await API.post('/api/cam',{id:sel.value||''}); }catch(err){ toast(errMsg(err),false); } this.load(true); });
+    el.addEventListener('click',async e=>{ const b=e.target.closest('[data-cv]'); if(!b) return; const a=b.dataset.cv;
+      if(a==='scan'||a==='reload'){ this.load(true); }
+      if(a==='retry'){ this.play(); }
+      if(a==='mir'){ this.mirror=!this.mirror; S.camMirror=this.mirror; save(); const bx=$('#cvBox'); bx&&bx.classList.toggle('mir',this.mirror); }
+      if(a==='rot'){ S.camRot=!S.camRot; save(); const bx=$('#cvBox'); bx&&bx.classList.toggle('rot',!!S.camRot); }
+      if(a==='full'){ const bx=$('#cvBox'); try{ if(document.fullscreenElement) await document.exitFullscreen(); else await bx.requestFullscreen(); }catch(err){ toast('تعذر ملء الشاشة',false); } }
+      if(a==='snap'){ try{ const r=await API.post('/api/cam/save',{}); toast('انحفظت الصورة: '+r.name); }catch(err){ toast(errMsg(err),false); } }
+    });
+  }
+};
+{ const h=onHide.settings; onHide.settings=()=>{ h&&h(); CamView.stop(); }; }
+/* =====================================================================
+   FAST INK — الكتابة السريعة
+   برنامج صغير على الجهاز (alharthia_ink.py) يقرأ اللمس من الكيرنل مباشرة ويرسم
+   «الحبر الطري» فوق الشاشة. الواجهة هنا تخبره: وين مسموح يرسم، اللون والسُمك،
+   ومتى يوقف. وتسوي معايرة تلقائية: تقارن مكان اللمسة عندها ويا مكانها عنده.
+   كل الإحداثيات نسبة من الشاشة (0..1).
+   ===================================================================== */
+const FastInk={
+  last:'', cancel:0, pairs:[], bad:0, status:null, t:0,
+  async init(){
+    for(let i=0;i<40&&!(window.Native&&Native.on);i++) await new Promise(r=>setTimeout(r,250));
+    if(!(window.Native&&Native.on)) return;
+    if(S.fastInk===undefined) S.fastInk=true;
+    Board.cLive.addEventListener('pointerdown',e=>this.onDown(e),true);
+    this.t=setInterval(()=>this.sync(),150);
+    this.poll();
+  },
+  async poll(){
+    try{ this.status=await API.get('/api/ink'); }catch(e){ this.status=null; }
+    if(isShown('settings')&&$('#inkCard')&&!$('#inkCard').closest('[hidden]')) this.renderCard();
+    setTimeout(()=>this.poll(),8000);
+  },
+  cal(){ return S.inkCal&&S.inkCal.ok?S.inkCal:{ok:false}; },
+  /* متى نرسم؟ بس بالسبورة/الكتابة فوق الشاشة، بالقلم، وبدون نوافذ فوقها */
+  active(){
+    const B=Board;
+    if(!S.fastInk||(window.Split&&Split.nat)) return false;
+    if(!(isShown('board')||(window.Annot&&Annot.on))) return false;
+    if(B.tool!=='ink'||!['pen','fountain','callig'].includes(B.pen)) return false;
+    if(B.inst.length||B.eyedrop||B.popName) return false;
+    if($('#modalHost').children.length||document.documentElement.classList.contains('gated')) return false;
+    const lk=$('#lock'); if(lk&&!lk.hidden) return false;
+    if($('#camCalib')) return false;
+    return true;
+  },
+  vis(el){
+    if(!el||el.hidden) return null;
+    const r=el.getBoundingClientRect(); if(r.width<2||r.height<2) return null;
+    const cs=getComputedStyle(el); if(cs.visibility==='hidden'||cs.display==='none'||+cs.opacity<0.05) return null;
+    return r;
+  },
+  nr(r){ const W=innerWidth, H=innerHeight, c=v=>Math.max(0,Math.min(1,v)); return [c(r.left/W),c(r.top/H),c(r.right/W),c(r.bottom/H)].map(v=>+v.toFixed(5)); },
+  state(){
+    const cal=this.cal();
+    if(!this.active()) return {on:false,cal};
+    const B=Board, live=this.vis(B.cLive); if(!live) return {on:false,cal};
+    const deny=[];
+    const add=el=>{ const r=this.vis(el); if(r) deny.push(this.nr(r)); };
+    $$('#board > :not(#boardArea)').forEach(add);
+    $$('#boardArea > :not(canvas):not(#instLayer)').forEach(add);
+    $$('#instLayer > *').forEach(add);
+    $$('#sideWrap > *, #spDiv, #osk, #topbar, #toast.on').forEach(add);
+    const w=(B.sizes.ink/REF*B.W)/innerWidth;
+    return {on:true,rect:this.nr(live),deny,color:B.color,width:+w.toFixed(5),tail:S.inkTail||110,cancel:this.cancel,cal};
+  },
+  sync(force){
+    const st=this.state(), j=JSON.stringify(st);
+    if(!force&&j===this.last) return;
+    this.last=j; API.post('/api/ink',st).catch(()=>{});
+  },
+  /* لمسة على السبورة: نتأكد إنها كتابة فعلاً، ونجمع نقاط للمعايرة */
+  onDown(e){
+    if(e.pointerType!=='touch'||!S.fastInk) return;
+    const B=Board;
+    if((S.palm&&(e.width>55||e.height>55))||S.penOnly){ this.cancel++; this.sync(true); return; }
+    const p={sx:e.clientX/innerWidth,sy:e.clientY/innerHeight,t:Date.now()/1000};
+    setTimeout(async()=>{
+      let r; try{ r=await API.get('/api/ink/last'); }catch(_){ return; }
+      const ds=(r.downs||[]).filter(d=>d[2]<=p.t+0.05&&p.t-d[2]<0.8);
+      if(!ds.length) return;
+      const d=ds[ds.length-1];
+      this.pairs=[...this.pairs,{nx:d[0],ny:d[1],sx:p.sx,sy:p.sy}].slice(-8);
+      this.solve();
+    },260);
+  },
+  err(c,p){ let u=p.nx, v=p.ny; if(c.swap) [u,v]=[v,u]; return Math.hypot(u*c.ax+c.bx-p.sx, v*c.ay+c.by-p.sy); },
+  fit(us,ss){
+    const n=us.length, mu=us.reduce((a,b)=>a+b,0)/n, ms=ss.reduce((a,b)=>a+b,0)/n;
+    let cov=0, vu=0; for(let i=0;i<n;i++){ cov+=(us[i]-mu)*(ss[i]-ms); vu+=(us[i]-mu)**2; }
+    if(Math.max(...us)-Math.min(...us)<0.15||vu<1e-6) return null;
+    const a=cov/vu; return {a,b:ms-a*mu};
+  },
+  solve(){
+    const P=this.pairs, cur=this.cal();
+    if(cur.ok){
+      if(this.err(cur,P[P.length-1])>0.03){ if(++this.bad>=2){ S.inkCal={ok:false}; this.bad=0; save(); this.sync(true); this.renderCard(); } }
+      else this.bad=0;
+      return;
+    }
+    const id={ok:true,swap:false,ax:1,bx:0,ay:1,by:0};
+    if(P.length>=2&&P.slice(-2).every(p=>this.err(id,p)<0.012)){ this.setCal(id); return; }
+    if(P.length<3) return;                 // نقطتين تنطبق على أي معادلة — نحتاج ثلاث حتى نعرف الاتجاه
+    const res=[];
+    for(const swap of [false,true]){
+      const us=P.map(p=>swap?p.ny:p.nx), vs=P.map(p=>swap?p.nx:p.ny);
+      const fx=this.fit(us,P.map(p=>p.sx)), fy=this.fit(vs,P.map(p=>p.sy)); if(!fx||!fy) continue;
+      const c={ok:true,swap,ax:fx.a,bx:fx.b,ay:fy.a,by:fy.b}; res.push({c,m:Math.max(...P.map(p=>this.err(c,p)))});
+    }
+    res.sort((a,b)=>a.m-b.m);
+    const best=res[0], other=res[1];
+    if(best&&best.m<0.012&&(!other||other.m>Math.max(0.03,best.m*3))) this.setCal(best.c);
+  },
+  setCal(c){
+    S.inkCal={...c,ax:+c.ax.toFixed(5),bx:+c.bx.toFixed(5),ay:+c.ay.toFixed(5),by:+c.by.toFixed(5)}; this.bad=0; save();
+    this.sync(true); this.renderCard(); toast('الكتابة السريعة جاهزة ✓');
+  },
+  /* ---------- بطاقة الإعدادات (السبورة) ---------- */
+  renderCard(){
+    const c=$('#inkCard'); if(!c) return;
+    const head=`<h3>${icon('pen')}الكتابة السريعة <span class="badge-exp">تجريبي</span></h3>
+      <p class="hint">برنامج صغير يقرأ اللمس من الصبورة مباشرة ويرسم آخر قطعة من الخط تحت إصبعك فوراً — حتى تحس الخط لازق بالإصبع. يشتغل بالسبورة والكتابة فوق الشاشة.</p>`;
+    if(!(window.Native&&Native.on)){ c.innerHTML=head+`<div class="cam-note">${icon('info')}تشتغل على جهاز الصف نفسه.</div>`; paintIcons(c); return; }
+    const s=this.status, cal=this.cal();
+    const run=s&&s.running;
+    const stTxt=!run?'البرنامج مو شغال':`شغال${s.devices&&s.devices.length?' — '+s.devices.join('، '):' (ما لگى شاشة لمس)'}`;
+    c.innerHTML=head+`
+      <div class="row"><label>تشغيل الكتابة السريعة</label><label class="sw"><input type="checkbox" data-fi="on" ${S.fastInk?'checked':''}><span></span></label></div>
+      <div class="row"><span class="lbl">الحالة</span><b class="cam-st${run?' ok':''}">${esc(stTxt)}</b></div>
+      <div class="row"><label>المعايرة<span class="hint">${cal.ok?'جاهزة — الحبر بمكانه الصحيح':'تلقائية: ارسم ٣–٤ خطوط بالسبورة بأماكن متباعدة (فوك يمين، جوه يسار، وبالنص)'}</span></label>
+        <b class="cam-st${cal.ok?' ok':''}">${cal.ok?'✓ جاهزة':'تنتظر خطوط'}</b><button class="btn sm ghost" data-fi="recal">${icon('restart')}إعادة</button></div>
+      <div class="row"><label>طول الحبر الطري<span class="hint">إذا تشوف الخط يتأخر ورا الحبر الطري زيده، وإذا تشوف خطين قلّله</span></label>
+        <input type="range" min="60" max="220" step="10" value="${S.inkTail||110}" data-fi="tail"><b data-fi="tailv" style="min-width:64px;text-align:center">${nf(S.inkTail||110)} ms</b></div>
+      ${!run?`<div class="cam-note">${icon('info')}<span>البرنامج يشتغل وحده بعد إعادة تشغيل الجهاز (بعد التحديث). إذا بقى مو شغال: <code dir="ltr">cat ~/.local/share/alharthia-ink.log</code></span></div>`:''}`;
+    paintIcons(c); $$('input[type=range]',c).forEach(setRangeFill);
+    $('[data-fi=on]',c).onchange=e=>{ S.fastInk=e.target.checked; save(); this.sync(true); };
+    $('[data-fi=recal]',c).onclick=()=>{ S.inkCal={ok:false}; this.pairs=[]; save(); this.sync(true); this.renderCard(); toast('ارسم ٣–٤ خطوط بالسبورة بأماكن متباعدة'); };
+    const tr=$('[data-fi=tail]',c); tr.oninput=()=>{ S.inkTail=+tr.value; setRangeFill(tr); $('[data-fi=tailv]',c).textContent=nf(S.inkTail)+' ms'; save(); };
+  }
+};
+
+/* =====================================================================
    INTERFACE LANGUAGE — Arabic (default) / English
    الترجمة تنطبق على النصوص الظاهرة، وأي نص ما موجود بالقاموس يبقى بالعربي.
    ===================================================================== */
@@ -5920,7 +6455,7 @@ const Native={
     const sig=JSON.stringify(st); if(sig===this.kbdSig) return; this.kbdSig=sig;
     API.post('/api/keyboard',st).catch(()=>{});
   },
-  async launch(o,label){ try{ await API.post('/api/apps/launch',o); toast('جاري فتح '+(label||'البرنامج')+'…'); }catch(e){ toast(errMsg(e),false); } },
+  async launch(o,label){ Split.nativeOn(); try{ await API.post('/api/apps/launch',o); toast('جاري فتح '+(label||'البرنامج')+'…'); }catch(e){ toast(errMsg(e),false); } },
   job(j,onP){
     return new Promise((res,rej)=>{ const tick=async()=>{ try{ const s=await API.get('/api/jobs?id='+j.id); onP&&onP(s.progress,s); if(s.state==='done') res(s); else if(s.state==='error') rej(new Error(s.error||'فشل')); else setTimeout(tick,700); }catch(e){ rej(e); } }; tick(); });
   },
@@ -5942,12 +6477,12 @@ const Native={
     const self=this;
     // navigation: the browser opens the real Chromium
     const baseGo=go;
-    go=function(id,arg){ if(id==='browser'){ if(window.ALH_HOST) console.log('ALHCMD:'+JSON.stringify({cmd:'browser'})); else self.launch({id:'chromium'},'Chromium'); return; } return baseGo(id,arg); };
+    go=function(id,arg){ if(id==='browser'){ if(window.ALH_HOST) console.log('ALHCMD:'+JSON.stringify({cmd:'browser',half:Split.nativeOn()})); else self.launch({id:'chromium'},'Chromium'); return; } return baseGo(id,arg); };
     const baseLaunch=Apps.launch.bind(Apps);
     Apps.launch=function(id){
       const st=STORE_APPS.find(a=>a.id===id);
       if(id==='chromium') return go('browser');
-      if(st&&!APPS_BUILTIN.some(a=>a.id===id)){ justInstalled.delete(id); if(st.web&&window.ALH_HOST&&WEB_APPS[id]){ console.log('ALHCMD:'+JSON.stringify({cmd:'browser',url:WEB_APPS[id]})); return; } if(st.web) return self.launch({id},st.n); return self.launch({id},st.n); }
+      if(st&&!APPS_BUILTIN.some(a=>a.id===id)){ justInstalled.delete(id); if(st.web&&window.ALH_HOST&&WEB_APPS[id]){ console.log('ALHCMD:'+JSON.stringify({cmd:'browser',url:WEB_APPS[id],half:Split.nativeOn()})); return; } if(st.web) return self.launch({id},st.n); return self.launch({id},st.n); }
       return baseLaunch(id);
     };
     // power
@@ -5973,7 +6508,7 @@ const Native={
       $('#aboutCard').innerHTML='<div class="empty"><div class="spin"></div></div>';
       let s={}; try{ s=await API.get('/api/sys'); self.sys=s; }catch(e){}
       const up=s.uptime?`${nf(Math.floor(s.uptime/3600))} ساعة و ${nf(Math.floor(s.uptime%3600/60))} دقيقة`:'—';
-      const rows=[['اسم النظام','Alharthia OS '+(s.version||'')],['نظام التشغيل',s.os],['الجهاز',s.model],['الذاكرة',s.ram?fmtSize(s.ram):'—'],['حرارة المعالج',s.temp!=null?nf(s.temp.toFixed(1))+'°م':'—'],
+      const rows=[['اسم النظام',OS_NAME+(s.version?' ('+s.version+')':'')],['نظام التشغيل',s.os],['الجهاز',s.model],['الذاكرة',s.ram?fmtSize(s.ram):'—'],['حرارة المعالج',s.temp!=null?nf(s.temp.toFixed(1))+'°م':'—'],
         ['التخزين',s.disk_total?`${fmtSize(s.disk_used)} مستخدمة من ${fmtSize(s.disk_total)}`:'—'],['النواة',s.kernel],['اسم الجهاز بالشبكة',s.hostname],['عنوان IP',(self.wifi&&self.wifi.ip)||'—'],['مدة التشغيل',up],['المستخدم',s.user]];
       $('#aboutCard').innerHTML=`<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px"><img src="${logoSrc()}" alt="" class="logo-thumb" style="width:76px;height:76px"><div><div style="font-size:24px;font-weight:700;color:var(--head);direction:ltr;text-align:right">Alharthia <span style="color:var(--acc)">OS</span></div><div class="sub" style="margin:0">${esc(S.school)}</div></div></div>`+
         rows.map(([k,v])=>`<div class="row"><span class="lbl" style="color:var(--muted)">${k}</span><span style="font-weight:600;flex:1.4;direction:auto">${esc(v||'—')}</span></div>`).join('');
@@ -6413,10 +6948,10 @@ ICONS.key='<circle cx="8" cy="15" r="4"/><path d="m10.9 12.1 8.1-8.1"/><path d="
 const ROLE_DEF={
   student:{n:'الطالب', c:'#0d9488', c2:'#5eead4', pw:false,
     /* قائمة مسموح بيها — أي شي مو مكتوب هنا مقفل */
-    apps:['board','pdf','files','word','ppt','excel','media','timer','settings'],
-    screens:['home','apps','board','pdf','files','office','media','timer','settings','gen'],
+    apps:['board','pdf','files','word','ppt','excel','media','timer','sched','settings'],
+    screens:['home','apps','board','pdf','files','office','media','timer','sched','settings','gen'],
     secs:['look','gallery','access'],
-    side:['files','board','shot','annot','close'],
+    side:['files','board','shot','annot','split','close'],
     note:'بدون إنترنت ولا تيرمنال ولا متجر، والإعدادات مظهر فقط'},
   teacher:{n:'الأستاذ', c:'#9f1239', c2:'#fda4af', pw:true,
     denyApps:['terminal'], denyScreens:['term'],
@@ -6555,6 +7090,7 @@ const Role={
   /* ---------- تطبيق الصلاحيات ---------- */
   apply(){
     const d=this.def();
+    if(typeof SPL!=='undefined'&&SPL.on) Split.exit();
     document.documentElement.dataset.user=this.cur;   // مو data-role: closest() كان يلگيها ويبلع النقرات
     // نخبر النظام حتى يمنع التشغيل فعلياً مو بس يخفي الأزرار
     if(typeof Native!=='undefined'&&Native.on) API.post('/api/role',{role:this.cur}).catch(()=>{});
@@ -7136,7 +7672,9 @@ function showSec(sec){
   if(sec==='storage') Storage.render();
   if(sec==='conn'){ renderConn(); if(window.Native&&Native.on&&Native.bt&&Native.bt.powered&&!(Native.near||[]).length) Native.btScan(); }
   if(sec==='sound') AudioOut.load();
-  if(sec==='boardset'){ TouchTest.render(); CamAssist.renderCard(); }
+  if(sec!=='camera') CamView.stop();
+  if(sec==='camera') CamView.render();
+  if(sec==='boardset'){ TouchTest.render(); FastInk.renderCard(); CamAssist.renderCard(); }
   if(Extra.secs[sec]) Extra.renderSec(sec);
 }
 $('#setNav').addEventListener('click',e=>{ const b=e.target.closest('[data-sec]'); if(b) showSec(b.dataset.sec); });
@@ -7203,7 +7741,7 @@ function bindSettings(){
   makeDraggable('pv');
 }
 function renderAbout(){
-  const rows=[['اسم النظام','Alharthia OS '+OS_VERSION],['الأساس','Raspberry Pi OS Lite (Debian) — 64-bit'],['الواجهة','Wayland (labwc) + واجهة الصف'],['الجهاز','Raspberry Pi 5 — ذاكرة 8 GB'],['التخزين','NVMe SSD — 256 GB'],['الشاشة',`${screen.width} × ${screen.height} — شاشة لمس تفاعلية`],['البرامج المثبتة من المتجر',nf(S.installed.length)],['المدرسة',S.school],['الصف',S.cls]];
+  const rows=[['اسم النظام',OS_NAME],['الأساس','Raspberry Pi OS Lite (Debian) — 64-bit'],['الواجهة','Wayland (labwc) + واجهة الصف'],['الجهاز','Raspberry Pi 5 — ذاكرة 8 GB'],['التخزين','NVMe SSD — 256 GB'],['الشاشة',`${screen.width} × ${screen.height} — شاشة لمس تفاعلية`],['البرامج المثبتة من المتجر',nf(S.installed.length)],['المدرسة',S.school],['الصف',S.cls]];
   $('#aboutCard').innerHTML=`<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px"><img src="${logoSrc()}" alt="" class="logo-thumb" style="width:76px;height:76px"><div><div style="font-size:24px;font-weight:700;color:var(--head);direction:ltr;text-align:right">Alharthia <span style="color:var(--acc)">OS</span></div><div class="sub" style="margin:0">الإصدار ${OS_VERSION} — نظام الصف التفاعلي</div></div></div>`+
     rows.map(([k,v])=>`<div class="row"><span class="lbl" style="color:var(--muted)">${k}</span><span style="font-weight:600;flex:1.4">${esc(v)}</span></div>`).join('')+
     `<div class="btns" style="margin-top:12px"><button class="btn" data-toast="النظام محدَّث لآخر إصدار">${icon('restart')}البحث عن تحديثات</button></div>`;
@@ -7288,10 +7826,10 @@ function tick(){
   document.fonts&&document.fonts.ready.then(()=>{ layoutAll(); Board.redraw(); });
   addEventListener('beforeunload',()=>{ Board.persist(); FS.persist(); });
   Extra.init();
-  Attend.init();
+  Attend.init(); Sched.init(); Split.init();
   renderDock();
   Keyboard.init(); Media.init(); AudioOut.init(); Term.init(); Side.init(); Cast.init(); Lang.apply(true);
-  Native.init(); CamAssist.init();
+  Native.init(); CamAssist.init(); FastInk.init();
   Role.init();
   const m=$('#sysMsg'); $('#sysTxt').textContent='جاري التشغيل…'; m.hidden=false; if(S.bootSound) setTimeout(()=>beep(1,523),200);
   setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); 

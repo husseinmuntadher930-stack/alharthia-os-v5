@@ -11,10 +11,10 @@ ICONS.key='<circle cx="8" cy="15" r="4"/><path d="m10.9 12.1 8.1-8.1"/><path d="
 const ROLE_DEF={
   student:{n:'الطالب', c:'#0d9488', c2:'#5eead4', pw:false,
     /* قائمة مسموح بيها — أي شي مو مكتوب هنا مقفل */
-    apps:['board','pdf','files','word','ppt','excel','media','timer','settings'],
-    screens:['home','apps','board','pdf','files','office','media','timer','settings','gen'],
+    apps:['board','pdf','files','word','ppt','excel','media','timer','sched','settings'],
+    screens:['home','apps','board','pdf','files','office','media','timer','sched','settings','gen'],
     secs:['look','gallery','access'],
-    side:['files','board','shot','annot','close'],
+    side:['files','board','shot','annot','split','close'],
     note:'بدون إنترنت ولا تيرمنال ولا متجر، والإعدادات مظهر فقط'},
   teacher:{n:'الأستاذ', c:'#9f1239', c2:'#fda4af', pw:true,
     denyApps:['terminal'], denyScreens:['term'],
@@ -153,6 +153,7 @@ const Role={
   /* ---------- تطبيق الصلاحيات ---------- */
   apply(){
     const d=this.def();
+    if(typeof SPL!=='undefined'&&SPL.on) Split.exit();
     document.documentElement.dataset.user=this.cur;   // مو data-role: closest() كان يلگيها ويبلع النقرات
     // نخبر النظام حتى يمنع التشغيل فعلياً مو بس يخفي الأزرار
     if(typeof Native!=='undefined'&&Native.on) API.post('/api/role',{role:this.cur}).catch(()=>{});

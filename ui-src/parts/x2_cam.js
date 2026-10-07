@@ -139,3 +139,79 @@ const CamAssist={
     }
   }
 };
+
+/* =====================================================================
+   شاشة الكاميرا بالإعدادات — بث مباشر من كاميرا USB (مثل PS3 Eye)
+   ===================================================================== */
+const CamView={
+  st:null, poll:0, sig:'', mirror:false, ph:'',
+  el(){ return $('#setMain .sec[data-sec=camera]'); },
+  stop(){ clearInterval(this.poll); this.poll=0; const im=$('#cvImg'); if(im){ im.removeAttribute('src'); } },
+  async render(){
+    const el=this.el(); if(!el) return; this.mirror=!!S.camMirror;
+    const head=`<h1 class="h1">الكاميرا</h1><p class="sub">اربط كاميرا USB أو كاميرا الراسبيري بالشريط وشوف الصورة مباشرة.</p>`;
+    if(!(window.Native&&Native.on)){ el.innerHTML=head+`<div class="card"><div class="cam-note">${icon('info')}<span>الكاميرا تشتغل على جهاز الصف نفسه (مو بمعاينة المتصفح).</span></div></div>`; paintIcons(el); return; }
+    el.innerHTML=head+`<div class="card"><div class="empty"><div class="spin"></div>جاري البحث عن الكاميرا…</div></div>`;
+    await this.load(true);
+    clearInterval(this.poll); this.poll=setInterval(()=>{ if(isShown('settings')&&this.el()&&!this.el().hidden) this.load(false); else this.stop(); },3000);
+  },
+  async load(first){
+    let s; try{ s=await API.get('/api/cam'); }catch(e){ s=null; }
+    this.st=s;
+    // كاميرا وحدة موصولة وما مختارة؟ نختارها لوحدنا
+    if(s&&s.cv&&!s.id&&s.cams.length===1){ try{ this.st=s=await API.post('/api/cam',{id:s.cams[0].id}); }catch(e){} }
+    const sig=s?JSON.stringify([s.cams.map(c=>c.id),s.id,s.connected,s.cv]):'x';
+    if(first||sig!==this.sig){ this.sig=sig; this.draw(); } else this.status();
+  },
+  status(){
+    const s=this.st, b=$('#cvStat'); if(!b||!s) return;
+    const txt=s.error?s.error:s.running?`شغالة — ${nf(Math.round(s.fps||0))} صورة/ثانية${s.size&&s.size[0]?` · ${nf(s.size[0])}×${nf(s.size[1])}`:''}`:'متوقفة';
+    b.textContent=txt; b.classList.toggle('ok',!!(s.running&&!s.error));
+  },
+  draw(){
+    const el=this.el(); if(!el) return; const s=this.st;
+    const head=`<h1 class="h1">الكاميرا</h1><p class="sub">اربط كاميرا USB أو كاميرا الراسبيري بالشريط وشوف الصورة مباشرة.</p>`;
+    if(!s){ el.innerHTML=head+`<div class="card"><div class="cam-note">${icon('info')}تعذر الاتصال بخدمة الكاميرا.</div><div class="btns" style="margin-top:12px"><button class="btn" data-cv="reload">${icon('restart')}إعادة المحاولة</button></div></div>`; paintIcons(el); this.bind(); return; }
+    const cur=s.cams.find(c=>c.id===s.id);
+    const opts=[`<option value="">— اختر كاميرا —</option>`].concat(s.cams.map(k=>`<option value="${esc(k.id)}" ${k.id===s.id?'selected':''}>${esc(k.name)}</option>`));
+    const live=!!(s.cv&&cur);
+    const note=!s.cv?`<div class="cam-note">${icon('info')}<span>عرض الكاميرا يحتاج مكتبة OpenCV. تنزل وحدها مع التحديث، أو بالطرفية: <code dir="ltr">sudo apt install python3-opencv</code></span></div>`
+      :!s.cams.length?`<div class="cam-note">${icon('info')}<span>ماكو كاميرا موصولة. وصّل كاميرا USB أو كاميرا الشريط (والجهاز مطفي) وراح تطلع هنا لحالها.</span></div>`
+      :!cur?`<div class="cam-note">${icon('info')}<span>اختر الكاميرا من القائمة حتى تبدي الصورة.</span></div>`:'';
+    const csi=cur&&cur.vidpid==='csi'?`<div class="cam-note">${icon('info')}<span>كاميرا الشريط (CSI): إذا ركّبتها فوك الصبورة وطلعت الصورة مقلوبة اضغط «تدوير».${/noir/i.test(cur.name)?' كاميرا NoIR ألوانها تطلع وردية شوية — هذا طبيعي.':''}</span></div>`:'';
+    const eye=cur&&/PlayStation Eye/i.test(cur.name)?`<div class="cam-note">${icon('info')}<span>PS3 Eye: على العدسة حلقة بنقطتين — خلي النقطة <b>الزرقاء</b> (زاوية واسعة) حتى تشوف الشاشة كلها.</span></div>`:'';
+    el.innerHTML=head+`<div class="card">
+      <div class="row"><label>الكاميرا<span class="hint">${s.cams.length?'كل الكاميرات الموصولة (USB أو الشريط)':'ماكو كاميرا موصولة'}</span></label>
+        <select class="field" data-cv="sel">${opts.join('')}</select><button class="btn sm ghost" data-cv="scan" title="تحديث">${icon('restart')}</button></div>
+      ${note}${eye}${csi}
+      ${live?`<div class="cv-box${this.mirror?' mir':''}${S.camRot?' rot':''}" id="cvBox"><img id="cvImg" alt=""><div class="cv-err" id="cvErr" hidden></div>
+        <div class="cv-bar"><b class="cam-st" id="cvStat">…</b><span class="grow"></span>
+          <button class="btn sm" data-cv="mir">${icon('swap')}قلب الصورة</button>
+          <button class="btn sm" data-cv="rot">${icon('restart')}تدوير</button>
+          <button class="btn sm" data-cv="snap">${icon('camera')}التقاط صورة</button>
+          <button class="btn sm" data-cv="full">${icon('fit')}ملء الشاشة</button></div></div>`:''}
+    </div>`;
+    paintIcons(el); this.bind(); this.status();
+    if(live) this.play(); 
+  },
+  play(){
+    const im=$('#cvImg'); if(!im) return; const err=$('#cvErr');
+    im.onload=()=>{ err.hidden=true; const bx=$('#cvBox'); if(bx&&im.naturalWidth) bx.style.aspectRatio=im.naturalWidth+'/'+im.naturalHeight; };
+    im.onerror=()=>{ err.hidden=false; err.innerHTML=`${icon('info')}<span>${esc((this.st&&this.st.error)||'ما وصلت صورة من الكاميرا')}</span><button class="btn sm" data-cv="retry">إعادة المحاولة</button>`; paintIcons(err); };
+    im.src='/api/cam/stream?t='+encodeURIComponent(API.tok||'')+'&r='+Date.now();
+  },
+  bind(){
+    const el=this.el(); if(!el||el._cvb) return; el._cvb=true;
+    el.addEventListener('change',async e=>{ const sel=e.target.closest('[data-cv=sel]'); if(!sel) return;
+      try{ await API.post('/api/cam',{id:sel.value||''}); }catch(err){ toast(errMsg(err),false); } this.load(true); });
+    el.addEventListener('click',async e=>{ const b=e.target.closest('[data-cv]'); if(!b) return; const a=b.dataset.cv;
+      if(a==='scan'||a==='reload'){ this.load(true); }
+      if(a==='retry'){ this.play(); }
+      if(a==='mir'){ this.mirror=!this.mirror; S.camMirror=this.mirror; save(); const bx=$('#cvBox'); bx&&bx.classList.toggle('mir',this.mirror); }
+      if(a==='rot'){ S.camRot=!S.camRot; save(); const bx=$('#cvBox'); bx&&bx.classList.toggle('rot',!!S.camRot); }
+      if(a==='full'){ const bx=$('#cvBox'); try{ if(document.fullscreenElement) await document.exitFullscreen(); else await bx.requestFullscreen(); }catch(err){ toast('تعذر ملء الشاشة',false); } }
+      if(a==='snap'){ try{ const r=await API.post('/api/cam/save',{}); toast('انحفظت الصورة: '+r.name); }catch(err){ toast(errMsg(err),false); } }
+    });
+  }
+};
+{ const h=onHide.settings; onHide.settings=()=>{ h&&h(); CamView.stop(); }; }

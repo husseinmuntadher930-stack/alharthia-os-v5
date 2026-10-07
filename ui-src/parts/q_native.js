@@ -68,7 +68,7 @@ const Native={
     const sig=JSON.stringify(st); if(sig===this.kbdSig) return; this.kbdSig=sig;
     API.post('/api/keyboard',st).catch(()=>{});
   },
-  async launch(o,label){ try{ await API.post('/api/apps/launch',o); toast('جاري فتح '+(label||'البرنامج')+'…'); }catch(e){ toast(errMsg(e),false); } },
+  async launch(o,label){ Split.nativeOn(); try{ await API.post('/api/apps/launch',o); toast('جاري فتح '+(label||'البرنامج')+'…'); }catch(e){ toast(errMsg(e),false); } },
   job(j,onP){
     return new Promise((res,rej)=>{ const tick=async()=>{ try{ const s=await API.get('/api/jobs?id='+j.id); onP&&onP(s.progress,s); if(s.state==='done') res(s); else if(s.state==='error') rej(new Error(s.error||'فشل')); else setTimeout(tick,700); }catch(e){ rej(e); } }; tick(); });
   },
@@ -90,12 +90,12 @@ const Native={
     const self=this;
     // navigation: the browser opens the real Chromium
     const baseGo=go;
-    go=function(id,arg){ if(id==='browser'){ if(window.ALH_HOST) console.log('ALHCMD:'+JSON.stringify({cmd:'browser'})); else self.launch({id:'chromium'},'Chromium'); return; } return baseGo(id,arg); };
+    go=function(id,arg){ if(id==='browser'){ if(window.ALH_HOST) console.log('ALHCMD:'+JSON.stringify({cmd:'browser',half:Split.nativeOn()})); else self.launch({id:'chromium'},'Chromium'); return; } return baseGo(id,arg); };
     const baseLaunch=Apps.launch.bind(Apps);
     Apps.launch=function(id){
       const st=STORE_APPS.find(a=>a.id===id);
       if(id==='chromium') return go('browser');
-      if(st&&!APPS_BUILTIN.some(a=>a.id===id)){ justInstalled.delete(id); if(st.web&&window.ALH_HOST&&WEB_APPS[id]){ console.log('ALHCMD:'+JSON.stringify({cmd:'browser',url:WEB_APPS[id]})); return; } if(st.web) return self.launch({id},st.n); return self.launch({id},st.n); }
+      if(st&&!APPS_BUILTIN.some(a=>a.id===id)){ justInstalled.delete(id); if(st.web&&window.ALH_HOST&&WEB_APPS[id]){ console.log('ALHCMD:'+JSON.stringify({cmd:'browser',url:WEB_APPS[id],half:Split.nativeOn()})); return; } if(st.web) return self.launch({id},st.n); return self.launch({id},st.n); }
       return baseLaunch(id);
     };
     // power
@@ -121,7 +121,7 @@ const Native={
       $('#aboutCard').innerHTML='<div class="empty"><div class="spin"></div></div>';
       let s={}; try{ s=await API.get('/api/sys'); self.sys=s; }catch(e){}
       const up=s.uptime?`${nf(Math.floor(s.uptime/3600))} ساعة و ${nf(Math.floor(s.uptime%3600/60))} دقيقة`:'—';
-      const rows=[['اسم النظام','Alharthia OS '+(s.version||'')],['نظام التشغيل',s.os],['الجهاز',s.model],['الذاكرة',s.ram?fmtSize(s.ram):'—'],['حرارة المعالج',s.temp!=null?nf(s.temp.toFixed(1))+'°م':'—'],
+      const rows=[['اسم النظام',OS_NAME+(s.version?' ('+s.version+')':'')],['نظام التشغيل',s.os],['الجهاز',s.model],['الذاكرة',s.ram?fmtSize(s.ram):'—'],['حرارة المعالج',s.temp!=null?nf(s.temp.toFixed(1))+'°م':'—'],
         ['التخزين',s.disk_total?`${fmtSize(s.disk_used)} مستخدمة من ${fmtSize(s.disk_total)}`:'—'],['النواة',s.kernel],['اسم الجهاز بالشبكة',s.hostname],['عنوان IP',(self.wifi&&self.wifi.ip)||'—'],['مدة التشغيل',up],['المستخدم',s.user]];
       $('#aboutCard').innerHTML=`<div style="display:flex;align-items:center;gap:18px;margin-bottom:10px"><img src="${logoSrc()}" alt="" class="logo-thumb" style="width:76px;height:76px"><div><div style="font-size:24px;font-weight:700;color:var(--head);direction:ltr;text-align:right">Alharthia <span style="color:var(--acc)">OS</span></div><div class="sub" style="margin:0">${esc(S.school)}</div></div></div>`+
         rows.map(([k,v])=>`<div class="row"><span class="lbl" style="color:var(--muted)">${k}</span><span style="font-weight:600;flex:1.4;direction:auto">${esc(v||'—')}</span></div>`).join('');

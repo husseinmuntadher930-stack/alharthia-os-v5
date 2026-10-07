@@ -16,6 +16,7 @@ const Attend={
     $('#atMain').addEventListener('input',e=>{ if(e.target.id==='atQ'){ this.q=e.target.value.trim(); this.renderGrid(); } });
     $('#atMain').addEventListener('keydown',e=>{ if(e.target.id==='atName'&&e.key==='Enter'){ e.preventDefault(); this.addOne(); } });
     $('#atFile').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(f) this.addMany(await f.text()); };
+    document.addEventListener('click',e=>{ if(e.target.closest('[data-rpick]')) this.pick(); });
     if(!S.attMig){ S.attMig=true; if(!S.dock.includes('attend')&&S.dock.length<7) S.dock.splice(1,0,'attend'); save(); }
   },
   persist(){ if(!store.set('attendance',this.data)) toast('تعذر حفظ سجل الحضور',false); },
@@ -129,7 +130,7 @@ const Attend={
     if(a==='addBulk') this.addMany($('#atBulk').value);
     if(a==='file') $('#atFile').click();
     if(a==='sort'){ C.students.sort((x,y)=>x.name.localeCompare(y.name,'ar')); this.persist(); this.render(); }
-    if(a==='clearAll'&&await confirmBox('حذف كل الطلاب','راح تنحذف كل الأسماء وسجل الحضور لهذا الصف.','حذف الكل',true,'trash')){ C.students=[]; C.records={}; C.notes={}; this.persist(); this.render(); }
+    if(a==='clearAll'&&await confirmBox('حذف كل الطلاب','راح تنحذف كل الأسماء وسجل الحضور لهذا الصف.','حذف الكل',true,'trash')){ C.students=[]; C.records={}; C.notes={}; C.picked=[]; this.persist(); this.render(); }
     if(a==='allP'){ C.students.forEach(s=>r[s.id]='p'); this.persist(); this.refreshDay(); toast('تم تسجيل الكل حاضرين'); }
     if(a==='restP'){ C.students.forEach(s=>{ if(!r[s.id]) r[s.id]='p'; }); this.persist(); this.refreshDay(); }
     if(a==='clearDay'&&await confirmBox('مسح تسجيل اليوم','راح ينمسح تسجيل الحضور لهذا اليوم فقط.','مسح',true,'trash')){ delete C.records[this.date]; this.persist(); this.refreshDay(); }
@@ -140,13 +141,31 @@ const Attend={
     if(a==='del'&&await confirmBox('حذف الصف',`تريد تحذف «${esc(C.name)}» مع كل الطلاب والسجل؟`,'حذف',true,'trash')){ this.data.classes=this.data.classes.filter(x=>x!==C); this.data.cur=this.data.classes[0].id; this.persist(); this.render(); }
     if(a==='pick') this.pick();
   },
+  /* اختيار طالب عشوائي — الأسماء اللي انختارت ما تنعاد لين الـ Reset */
   pick(){
     const C=this.cls, r=C.records[this.date]||{};
-    let pool=C.students.filter(s=>r[s.id]==='p'||r[s.id]==='l'); if(!pool.length) pool=C.students.filter(s=>r[s.id]!=='a'&&r[s.id]!=='e');
-    if(!pool.length){ toast('ماكو طلاب حاضرين',false); return; }
-    modal({title:'اختيار طالب عشوائي',iconName:'dice',body:'<div class="pick-name" id="pkN">…</div>',actions:[{label:'مرة ثانية',val:'again',cls:'ghost'},{label:'تم',val:null,cls:'primary'}],
-      onOpen:ov=>{ let n=0; const el=$('#pkN',ov); const spin=()=>{ el.textContent=pool[Math.floor(Math.random()*pool.length)].name; if(++n<18) setTimeout(spin,50+n*9); else beep(1,880); }; spin(); }
-    }).then(v=>{ if(v==='again') this.pick(); });
+    if(!C.students.length){ toast('ضيف أسماء الطلاب من تطبيق الحضور أول',false); return; }
+    const ids=new Set(C.students.map(s=>s.id)); C.picked=(C.picked||[]).filter(i=>ids.has(i));
+    const done=new Set(C.picked);
+    let all=C.students.filter(s=>r[s.id]==='p'||r[s.id]==='l'); if(!all.length) all=C.students.filter(s=>r[s.id]!=='a'&&r[s.id]!=='e');
+    const pool=all.filter(s=>!done.has(s.id));
+    const left=pool.length-1;
+    const resetBtn={label:icon('undo')+'Reset — تصفير',val:'reset',cls:'ghost'};
+    if(!pool.length){
+      modal({title:'اختيار طالب عشوائي',iconName:'dice',body:`<div class="pick-name" style="font-size:30px">${all.length?'كل الطلاب انختاروا':'ماكو طلاب حاضرين'}</div><p style="text-align:center;opacity:.7">اضغط Reset حتى ترجع كل الأسماء تنختار من جديد</p>`,actions:[resetBtn,{label:'تم',val:null,cls:'primary'}]})
+        .then(v=>{ if(v==='reset') this.pickReset(true); });
+      return;
+    }
+    const chosen=pool[Math.floor(Math.random()*pool.length)];
+    C.picked.push(chosen.id); this.persist();
+    modal({title:'اختيار طالب عشوائي',iconName:'dice',body:`<div class="pick-name" id="pkN">…</div><p id="pkL" style="text-align:center;opacity:.7;margin:0">باقي ${nf(left)} من ${nf(all.length)}</p>`,
+      actions:[resetBtn,{label:'مرة ثانية',val:'again',cls:'ghost'},{label:'تم',val:null,cls:'primary'}],
+      onOpen:ov=>{ let n=0; const el=$('#pkN',ov); const spin=()=>{ if(!el.isConnected) return; if(++n<18){ el.textContent=all[Math.floor(Math.random()*all.length)].name; setTimeout(spin,50+n*9); } else { el.textContent=chosen.name; beep(1,880); } }; spin(); }
+    }).then(v=>{ if(v==='again') this.pick(); else if(v==='reset') this.pickReset(true); });
+  },
+  pickReset(again){
+    const C=this.cls; C.picked=[]; this.persist(); toast('تم تصفير الأسماء — الكل يرجع ينختار');
+    if(again) this.pick();
   }
 };
 onShow.attend=()=>Attend.render();

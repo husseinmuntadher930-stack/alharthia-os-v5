@@ -152,7 +152,7 @@ const Office={
     $('#ofBar').innerHTML=`<button class="dbtn home" data-go="home">${icon('home')}</button><button class="dbtn" data-go="files" title="الملفات">${icon('folder')}</button>
       <button class="dbtn" data-ob="device" title="فتح ملف">${icon('upload')}</button><span class="name">${esc(this.name||'')}</span><span class="grow"></span>${extra.join('')}<span class="grow"></span>
       ${A&&this.name?`<button class="btn sm ghost" data-ob="edit">${icon('edit')}تعديل بـ ${A.lo}</button>`:''}
-      <button class="dbtn" data-ob="full" title="ملء الشاشة">${icon('fit')}</button>`;
+      <button class="dbtn" data-rpick title="طالب عشوائي">${icon('dice')}</button><button class="dbtn" data-ob="full" title="ملء الشاشة">${icon('fit')}</button>`;
   },
   loading(){ $('#ofStage').innerHTML='<div class="empty"><div class="spin"></div>جاري فتح الملف…</div>'; },
   async open(type,buf,name){

@@ -16,6 +16,10 @@
   </windowRules>
   <keyboard>
     <default/>
+    <!-- split screen: the interface presses these to put a program on one half of the screen -->
+    <keybind key="W-Left"><action name="SnapToEdge" direction="left"/></keybind>
+    <keybind key="W-Right"><action name="SnapToEdge" direction="right"/></keybind>
+    <keybind key="W-Up"><action name="Maximize"/></keybind>
     <keybind key="W-Escape"><action name="Close"/></keybind>
     <keybind key="C-A-t"><action name="Execute" command="foot"/></keybind>
   </keyboard>

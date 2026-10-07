@@ -76,6 +76,7 @@ const Media={
           ${multi?`<button class="tbtn${this.showList?' on':''}" data-md="list" title="قائمة التشغيل">${icon('list')}</button>`:''}
           <button class="tbtn" data-md="pick" title="فتح ملف">${icon('folder')}</button>
           ${window.Native&&Native.on?`<button class="tbtn" data-md="ext" title="فتح بمشغل الوسائط الكامل">${icon('external')}</button>`:''}
+          <button class="tbtn" data-rpick title="طالب عشوائي">${icon('dice')}</button>
           <button class="tbtn" data-md="full" title="ملء الشاشة">${icon('fit')}</button>
         </div>
       </div>`;

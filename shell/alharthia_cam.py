@@ -5,6 +5,7 @@
 فالكاميرا تتابع حركة الإصبع/القلم بين نقطة وثانية وتخلي الخط بالسبورة يلحك الإصبع أسرع.
 
 - التعرّف على كاميرات USB يشتغل بدون أي مكتبة (sysfs + ioctl)
+- كاميرات الراسبيري بالشريط (CSI، مثل Camera Module 3 / NoIR) تشتغل عن طريق picamera2
 - المتابعة تحتاج OpenCV (python3-opencv). إذا ما موجودة النظام يشتغل عادي بدون كاميرا
 - الكاميرا تقترح «ذيل» مؤقت للخط بس؛ الخط المحفوظ دائماً من نقاط الشاشة نفسها
 """
@@ -13,7 +14,9 @@ import glob
 import json
 import os
 import re
+import shutil
 import struct
+import subprocess
 import threading
 import time
 
@@ -69,6 +72,10 @@ def _usb_dev_dir(real):
     return None
 
 
+# كاميرات USB تعطي 720p على 60 صورة/ثانية (MJPG): Logitech C922 و Razer Kiyo
+HD60 = {"046d:085c": (1280, 720), "1532:0e03": (1280, 720)}
+PS3_EYE = {"1415:2000"}          # Sony PlayStation Eye (OV534) — يشتغل بدرايفر gspca الجاهز بالكيرنل
+
 GENERIC = re.compile(r"^(uvc\s*camera|usb\s*(2\.0\s*)?(pc\s*)?camera|camera|video\s*capture|webcam)"
                      r"(\s*\([0-9a-f]{4}:[0-9a-f]{4}\))?$", re.I)
 
@@ -104,8 +111,11 @@ def list_cameras():
             continue
         seen.add(usb)
         name = _nice_name(_read(os.path.join(usb, "product")), _read(os.path.join(sysd, "name")), cap["card"])
-        out.append({"id": by_link.get(dev, os.path.basename(usb)), "dev": dev, "name": name,
-                    "vidpid": "%s:%s" % (_read(os.path.join(usb, "idVendor")), _read(os.path.join(usb, "idProduct")))})
+        vidpid = "%s:%s" % (_read(os.path.join(usb, "idVendor")), _read(os.path.join(usb, "idProduct")))
+        if vidpid in PS3_EYE:                          # كاميرا PS3 Eye تتعرّف باسم غامض (USB Camera-B4.09.24.1)
+            name = "PlayStation Eye (PS3)"
+        out.append({"id": by_link.get(dev, os.path.basename(usb)), "dev": dev, "name": name, "vidpid": vidpid})
+    out += list_csi()
     # نفس الاسم لكاميرتين → نرقّمهن
     cnt = {}
     for c in out:
@@ -116,6 +126,101 @@ def list_cameras():
             idx[c["name"]] = idx.get(c["name"], 0) + 1
             c["name"] = "%s (%d)" % (c["name"], idx[c["name"]])
     return out
+
+
+# ------------------------------------------------------------------ كاميرات الشريط (CSI)
+CSI_NAMES = {"imx708": "Camera Module 3", "imx708_noir": "Camera Module 3 NoIR",
+             "imx708_wide": "Camera Module 3 Wide", "imx708_wide_noir": "Camera Module 3 Wide NoIR",
+             "imx219": "Camera Module v2", "imx219_noir": "Camera Module v2 NoIR", "ov5647": "Camera Module v1",
+             "imx477": "HQ Camera", "imx296": "Global Shutter Camera", "imx500": "AI Camera"}
+CSI_SIZE = (1536, 864)        # وضع Camera Module 3 السريع: الصورة كاملة على 120 صورة/ثانية
+TRACK_W = 960                 # المتابعة على نسخة مصغّرة (أخف على المعالج ونفس ضبط المتابعة)
+_csi = {"t": -99.0, "list": []}
+
+
+def list_csi():
+    """كاميرات الشريط الموصولة بالراسبيري: [{id: csi-0, dev: csi:0, name}] — مخزّنة ١٠ ثواني."""
+    if time.monotonic() - _csi["t"] < 10:
+        return [dict(c) for c in _csi["list"]]
+    out, txt = [], ""
+    exe = shutil.which("rpicam-hello") or shutil.which("libcamera-hello")
+    try:
+        if exe:
+            p = subprocess.run([exe, "--list-cameras"], capture_output=True, text=True, timeout=8)
+            txt = (p.stdout or "") + (p.stderr or "")
+            for m in re.finditer(r"^\s*(\d+)\s*:\s*([A-Za-z0-9_]+)\s*\[", txt, re.M):
+                out.append((int(m.group(1)), m.group(2)))
+        else:
+            code = ("import json\nfrom picamera2 import Picamera2\n"
+                    "print(json.dumps([[c.get('Num', i), c.get('Model', '')] for i, c in enumerate(Picamera2.global_camera_info())]))")
+            p = subprocess.run(["python3", "-c", code], capture_output=True, text=True, timeout=12)
+            out = [tuple(x) for x in json.loads((p.stdout or "[]").strip().splitlines()[-1] or "[]")]
+    except Exception:  # noqa
+        out = []
+    lst = [{"id": "csi-%d" % n, "dev": "csi:%d" % n, "vidpid": "csi", "model": mdl,
+            "name": "Raspberry Pi " + CSI_NAMES.get(mdl, "Camera (%s)" % mdl)} for n, mdl in out]
+    _csi.update(t=time.monotonic(), list=lst)
+    return [dict(c) for c in lst]
+
+
+class CsiCap:
+    """نفس واجهة cv2.VideoCapture تقريباً، بس للكاميرا الي بالشريط (picamera2)."""
+
+    def __init__(self, num):
+        self.cam, self.err = None, ""
+        try:
+            from picamera2 import Picamera2
+        except Exception:  # noqa
+            self.err = "مكتبة picamera2 مو مثبتة (sudo apt install python3-picamera2)"
+            return
+        try:
+            cam = Picamera2(num)
+            cfg = cam.create_video_configuration(main={"size": CSI_SIZE, "format": "YUV420"}, buffer_count=4,
+                                                 controls={"FrameDurationLimits": (8333, 8333)})
+            cam.configure(cfg)
+            cam.start()
+            try:
+                cam.set_controls({"AfMode": 2})       # تركيز تلقائي مستمر (Camera Module 3)
+            except Exception:  # noqa
+                pass
+            sz = cam.camera_configuration()["main"]["size"]
+            self.W, self.H = int(sz[0]), int(sz[1])
+            self.cam = cam
+        except Exception as e:  # noqa
+            self.err = "تعذر فتح كاميرا الشريط: %s" % str(e)[:120]
+            try:
+                cam.close()
+            except Exception:  # noqa
+                pass
+
+    def isOpened(self):
+        return self.cam is not None
+
+    def set(self, *a):
+        return False
+
+    def read(self):
+        try:
+            return True, self.cam.capture_array("main")
+        except Exception:  # noqa
+            return False, None
+
+    def gray(self, a):
+        y = a[:self.H, :self.W]
+        return cv2.resize(y, (TRACK_W, round(TRACK_W * self.H / self.W)), interpolation=cv2.INTER_AREA)
+
+    def bgr(self, a):
+        return cv2.cvtColor(a[:self.H * 3 // 2, :self.W], cv2.COLOR_YUV2BGR_I420)
+
+    def native(self):
+        return (self.W, self.H)
+
+    def release(self):
+        try:
+            self.cam.stop()
+            self.cam.close()
+        except Exception:  # noqa
+            pass
 
 
 # ------------------------------------------------------------------ المحرّك
@@ -214,7 +319,7 @@ class CamAssist:
             return
         self.err = ""
         self.running = True
-        self.thread = threading.Thread(target=self._loop, args=(cam["dev"],), daemon=True)
+        self.thread = threading.Thread(target=self._loop, args=(cam["dev"], cam.get("vidpid", "")), daemon=True)
         self.thread.start()
 
     def stop(self):
@@ -224,13 +329,17 @@ class CamAssist:
             t.join(timeout=2)
         self.thread = None
 
-    def _open(self, dev):
+    def _open(self, dev, vidpid=""):
+        if dev.startswith("csi:"):
+            return CsiCap(int(dev[4:] or 0))
         cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
         if not cap.isOpened():
             cap = cv2.VideoCapture(int(re.sub(r"\D", "", dev) or 0))
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        if vidpid not in PS3_EYE:                      # PS3 Eye ما تدعم MJPG: YUYV خام 640x480 على 60 صورة/ثانية
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        w, h = HD60.get(vidpid, (640, 480))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
         cap.set(cv2.CAP_PROP_FPS, 60)
         try:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)        # أحدث إطار دائماً، بدون طابور
@@ -238,12 +347,14 @@ class CamAssist:
             pass
         return cap
 
-    def _loop(self, dev):
-        cap = self._open(dev)
+    def _loop(self, dev, vidpid=""):
+        cap = self._open(dev, vidpid)
         if not cap.isOpened():
-            self.err = "تعذر فتح الكاميرا"
+            self.err = getattr(cap, "err", "") or "تعذر فتح الكاميرا"
             self.running = False
             return
+        csi = hasattr(cap, "gray")
+        jlast = 0.0
         t_last, n = time.monotonic(), 0
         try:
             while self.running:
@@ -253,19 +364,30 @@ class CamAssist:
                     time.sleep(0.2)
                     continue
                 now = time.monotonic()
-                g = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
+                if csi:
+                    g = cap.gray(fr)
+                else:
+                    g = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
+                    if g.shape[1] > TRACK_W:                     # 720p → نسخة مصغّرة للمتابعة
+                        g = cv2.resize(g, (TRACK_W, round(TRACK_W * g.shape[0] / g.shape[1])), interpolation=cv2.INTER_AREA)
                 n += 1
                 if now - t_last >= 1:
                     self.fps, n, t_last = n / (now - t_last), 0, now
                 with self.cond:
                     self.prev, self.gray, self.fts = self.gray, g, now
                     self.fseq += 1
-                    self.size = (g.shape[1], g.shape[0])
+                    self.size = cap.native() if csi else (fr.shape[1], fr.shape[0])
                     self.cond.notify_all()
-                if now - self.want_preview < 3 and self.fseq % 4 == 0:
-                    ok2, jp = cv2.imencode(".jpg", fr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                if now - self.want_preview < 3 and now - jlast >= 1 / 30:     # المعاينة ٣٠ صورة/ثانية تكفي
+                    jlast = now
+                    img = cap.bgr(fr) if csi else fr
+                    if img.shape[1] > 1280:
+                        img = cv2.resize(img, (1280, round(1280 * img.shape[0] / img.shape[1])), interpolation=cv2.INTER_AREA)
+                    ok2, jp = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
                     if ok2:
                         self.jpeg = jp.tobytes()
+                if not self.cfg.get("enabled") and self.base is None and now - self.want_preview > 12:
+                    break                                   # ما أحد يشوف المعاينة ولا مساعدة الكاميرا شغالة → نفصل الكاميرا
                 if self.active and self.H is not None:
                     self._track(g, now)
         finally:

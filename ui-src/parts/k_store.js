@@ -34,6 +34,7 @@ const APPS_BUILTIN=[
   {id:'chromium',n:'Chromium',sub:'متصفح الإنترنت',i:'globe',c:'#2f6fe4',go:'browser'},
   {id:'files',n:'مستكشف الملفات',i:'folder',c:'#e6a019',go:'files'},
   {id:'attend',n:'الحضور والغياب',sub:'سجل الطلاب اليومي',i:'attend',c:'#0d9488',go:'attend'},
+  {id:'sched',n:'جدول الحصص',sub:'جدول الأسبوع والمعلمين',i:'table',c:'#7c3aed',go:'sched'},
   {id:'word',n:'مستندات Word',sub:'LibreOffice Writer',i:'word',c:'#2f6fe4',office:'word'},
   {id:'ppt',n:'عروض PowerPoint',sub:'LibreOffice Impress',i:'slides',c:'#c2410c',office:'ppt'},
   {id:'excel',n:'جداول Excel',sub:'LibreOffice Calc',i:'table',c:'#16a34a',office:'excel'},
