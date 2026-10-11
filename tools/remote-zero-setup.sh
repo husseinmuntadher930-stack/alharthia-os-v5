@@ -82,6 +82,12 @@ cat > "$H/.alharthia-remote.sh" <<RUN
 TOKEN="\$(cat "\$HOME/.alharthia-remote-token" 2>/dev/null)"
 PAGE="${URL}?k=\$TOKEN"
 while true; do
+  # ننتظر الصبورة تشتغل (إذا الريموت اشتغل قبلها) — بعدها الصفحة ترجع تتصل وحدها لو انقطعت
+  n=0
+  until curl -fs -m 3 "${URL}api/hello" >/dev/null 2>&1; do
+    [ \$((n % 10)) -eq 0 ] && { clear; echo; echo "   AlharthiaOS Remote"; echo; echo "   Waiting for the board ... (${URL})"; }
+    n=\$((n+1)); sleep 3
+  done
   if [ "$BROWSER" = "cog" ]; then
     cage -s -- cog --platform=wl "\$PAGE"
   else
