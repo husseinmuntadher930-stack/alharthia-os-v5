@@ -300,6 +300,9 @@ function tick(){
   renderDock();
   Keyboard.init(); Media.init(); AudioOut.init(); Term.init(); Side.init(); Cast.init(); Lang.apply(true);
   Native.init(); CamAssist.init(); FastInk.init();
+  // 3.0
+  BoardX.init(); Classroom.init(); RFID.init(); Sys3.init(); RemoteBridge.init();
+  (async()=>{ for(let i=0;i<40&&!(window.Native&&Native.on);i++) await new Promise(r=>setTimeout(r,250)); RemoteBridge.init(); })();
   Role.init();
   const m=$('#sysMsg'); $('#sysTxt').textContent='جاري التشغيل…'; m.hidden=false; if(S.bootSound) setTimeout(()=>beep(1,523),200);
   setTimeout(()=>{ m.hidden=true; if(S.startApp&&S.startApp!=='home') go(S.startApp); 

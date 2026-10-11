@@ -134,14 +134,16 @@ const Role={
     toast('أهلاً — واجهة '+ROLE_DEF[k].n);
   },
   /* أزرار تودّي لقسم مقفل: ما ننطيها تطلع أصلاً بدل ما تنضغط وتطلع رسالة منع */
+  /* نخفي بس الي احنا خفيناه، وما نرجّع شي مخفي لسبب ثاني (مثل شارة المؤقت) */
+  hideFor(b,bad){ if(bad){ if(!b.hidden){ b.hidden=true; b.dataset.rh='1'; } } else if(b.dataset.rh){ b.hidden=false; delete b.dataset.rh; } },
   sweep(root=document){
-    if(!this.def().apps&&!(this.def().denyScreens||[]).length) return;   // المطوّر: ماكو شي ينخفي
+    if(!this.def().apps&&!(this.def().denyScreens||[]).length){ for(const b of $$('[data-rh]',root)) this.hideFor(b,false); return; }   // المطوّر: ماكو شي ينخفي
     for(const b of $$('[data-go]',root)){
       const id=b.dataset.go, sec=b.dataset.sec||b.dataset.arg;
       const bad=!this.canScreen(id)||(id==='settings'&&sec&&!this.canSec(sec));
-      if(b.hidden!==bad) b.hidden=bad;
+      this.hideFor(b,bad);
     }
-    for(const b of $$('[data-app]',root)) { const bad=!this.canApp(b.dataset.app); if(b.hidden!==bad) b.hidden=bad; }
+    for(const b of $$('[data-app]',root)) this.hideFor(b,!this.canApp(b.dataset.app));
   },
   watch(){
     if(this._ob) return;

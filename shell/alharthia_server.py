@@ -14,7 +14,7 @@ import json, os, re, secrets, shutil, socket, subprocess, sys, threading, time, 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
-VERSION = "2.3.0"
+VERSION = "3.0.0"
 HOST, PORT = "127.0.0.1", int(os.environ.get("ALH_PORT", "8765"))
 BASE = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE, "ui")
@@ -225,6 +225,201 @@ def root_fstype():
     parts = out.split()
     return (parts[0] if parts else "ext4"), (parts[1] if len(parts) > 1 else "")
 
+
+
+# ---------------------------------------------------------------- 3.0: error log, health, USB update, light sensor
+LOG_DIR = os.path.join(HOME, ".local", "share", "alharthia")
+ERR_LOG = os.path.join(LOG_DIR, "errors.log")
+_log_lock = threading.Lock()
+
+
+def err_log(source, msg):
+    """سجل الأعطال: سطر لكل خطأ (المصدر + الوقت + الرسالة) — يبقى آخر ~2000 سطر."""
+    line = "%s\t%s\t%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), str(source)[:20], str(msg).replace("\n", " ⏎ ")[:1500])
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with _log_lock:
+            with open(ERR_LOG, "a", encoding="utf-8") as f:
+                f.write(line)
+            if os.path.getsize(ERR_LOG) > 600 * 1024:
+                lines = open(ERR_LOG, encoding="utf-8", errors="ignore").readlines()[-2000:]
+                open(ERR_LOG, "w", encoding="utf-8").writelines(lines)
+    except OSError:
+        pass
+
+
+def err_read(n=200):
+    out = []
+    for path, src in ((ERR_LOG, None), (os.path.join(HOME, ".local/share/alharthia-ink.log"), "ink"),
+                      (os.path.join(LOG_DIR, "session.log"), "session")):
+        try:
+            lines = open(path, encoding="utf-8", errors="ignore").read().splitlines()[-n:]
+        except OSError:
+            continue
+        for ln in lines:
+            parts = ln.split("\t", 2)
+            if src is None and len(parts) == 3:
+                out.append({"t": parts[0], "src": parts[1], "msg": parts[2]})
+            elif src and ln.strip() and re.search(r"(?i)error|traceback|exception|fail|crash|restart", ln):
+                out.append({"t": "", "src": src, "msg": ln[:600]})
+    return out[-n:]
+
+
+def cpu_temp():
+    try:
+        return int(open("/sys/class/thermal/thermal_zone0/temp").read()) / 1000
+    except (OSError, ValueError):
+        return None
+
+
+def throttled():
+    code, out, _ = run(["vcgencmd", "get_throttled"], timeout=4) if has("vcgencmd") else (1, "", "")
+    m = re.search(r"0x([0-9a-fA-F]+)", out or "")
+    if not m:
+        return None
+    v = int(m.group(1), 16)
+    return {"raw": v, "under_voltage_now": bool(v & 0x1), "throttled_now": bool(v & 0x4),
+            "under_voltage_ever": bool(v & 0x10000), "throttled_ever": bool(v & 0x40000)}
+
+
+def mem_info():
+    info = {}
+    try:
+        for ln in open("/proc/meminfo"):
+            k, v = ln.split(":", 1)
+            info[k] = int(v.split()[0]) * 1024
+    except (OSError, ValueError):
+        return None
+    return {"total": info.get("MemTotal", 0), "avail": info.get("MemAvailable", 0)}
+
+
+def proc_alive(name):
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            cmd = open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode(errors="ignore")
+        except OSError:
+            continue
+        if name in cmd:
+            return True
+    return False
+
+
+def health():
+    du = shutil.disk_usage(HOME)
+    load = os.getloadavg() if hasattr(os, "getloadavg") else (0, 0, 0)
+    try:
+        up = float(open("/proc/uptime").read().split()[0])
+    except (OSError, ValueError):
+        up = 0
+    import alharthia_remote as rm
+    rs = rm.status()
+    cams = []
+    try:
+        import alharthia_cam as cam
+        cams = cam.list_cameras() if hasattr(cam, "list_cameras") else []
+    except Exception:  # noqa
+        cams = []
+    return {
+        "version": VERSION, "temp": cpu_temp(), "throttled": throttled(), "mem": mem_info(),
+        "disk": {"total": du.total, "used": du.used, "free": du.free}, "load": load, "uptime": up,
+        "procs": {"server": True, "ink": proc_alive("alharthia_ink.py"), "osk": proc_alive("alharthia_osk.py"),
+                  "host": proc_alive("alharthia_host.py") or proc_alive("--class=alharthia-shell")},
+        "remote": {"on": rs["on"], "devices": len(rs["devices"]), "online": sum(1 for d in rs["devices"] if d["online"])},
+        "cameras": len(cams), "usb": len(usb_devices()), "nvme": nvme_info(), "root": root_fstype()[0],
+        "errors24h": sum(1 for e in err_read(400) if e["t"] and e["t"] >= time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))),
+        "net": wifi_state().get("current") if has("nmcli") else None,
+        "rtc": _rtc_status(),
+    }
+
+
+def _rtc_status():
+    """حالة ساعة DS1302 (تكتبها خدمة alharthia-rtc)."""
+    try:
+        with open("/run/alharthia-rtc.json") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+UPDATE_RE = re.compile(r"(?i)^alharthia-os.*\.zip$")
+
+
+def usb_updates():
+    """يدوّر على ملف تحديث (alharthia-os-….zip) بجذر أي فلاشة مركّبة."""
+    found = []
+    for d in usb_devices():
+        mp = d.get("mount")
+        if not mp or not os.path.isdir(mp):
+            continue
+        try:
+            for n in os.listdir(mp):
+                full = os.path.join(mp, n)
+                if UPDATE_RE.match(n) and os.path.isfile(full):
+                    found.append({"path": full, "name": n, "size": os.path.getsize(full), "mtime": int(os.path.getmtime(full)), "usb": d["label"]})
+        except OSError:
+            continue
+    found.sort(key=lambda x: x["mtime"], reverse=True)
+    return found
+
+
+def read_light():
+    """حساس الضوء BH1750 على I2C (العنوان 0x23 أو 0x5C). يرجّع lux أو None."""
+    import fcntl
+    for bus in ("/dev/i2c-1", "/dev/i2c-0"):
+        if not os.path.exists(bus):
+            continue
+        for addr in (0x23, 0x5C):
+            try:
+                fd = os.open(bus, os.O_RDWR)
+            except OSError:
+                return None
+            try:
+                fcntl.ioctl(fd, 0x0703, addr)       # I2C_SLAVE
+                os.write(fd, bytes([0x20]))         # قراءة وحدة بدقة عالية
+                time.sleep(0.18)
+                data = os.read(fd, 2)
+                if len(data) == 2:
+                    return round(((data[0] << 8) | data[1]) / 1.2, 1)
+            except OSError:
+                pass
+            finally:
+                os.close(fd)
+    return None
+
+
+def remote_fs(path):
+    """الملفات الي يشوفها ريموت المعلم: مجلدات المعلم والفلاشات فقط، والملفات الي تنفتح بالصبورة."""
+    ok_ext = {"pdf", "pptx", "docx", "xlsx", "png", "jpg", "jpeg", "webp", "board", "mp4", "mp3", "webm", "m4a", "wav"}
+    if not path:
+        roots = [{"name": "المستندات", "path": os.path.join(HOME, FOLDERS["docs"]), "dir": True},
+                 {"name": "السبورات", "path": os.path.join(HOME, FOLDERS["boards"]), "dir": True},
+                 {"name": "التنزيلات", "path": os.path.join(HOME, FOLDERS["down"]), "dir": True},
+                 {"name": "الصور", "path": os.path.join(HOME, FOLDERS["pics"]), "dir": True},
+                 {"name": "الفيديو", "path": os.path.join(HOME, FOLDERS["vids"]), "dir": True}]
+        for d in usb_devices():
+            if d.get("mount"):
+                roots.append({"name": "فلاشة: " + d["label"], "path": d["mount"], "dir": True, "usb": True})
+        return {"path": "", "items": [r for r in roots if os.path.isdir(r["path"])]}
+    real = safe_path(path)
+    if is_system(real) and real not in protected_paths():
+        raise PermissionError("مجلد نظام")
+    items = []
+    for n in sorted(os.listdir(real), key=lambda x: x.lower()):
+        if n.startswith("."):
+            continue
+        full = os.path.join(real, n)
+        try:
+            e = entry(full)
+        except OSError:
+            continue
+        if e["dir"] or e["ext"] in ok_ext:
+            items.append(e)
+    items.sort(key=lambda e: (not e["dir"], -e["mtime"]))
+    parent = os.path.dirname(real)
+    return {"path": real, "parent": parent if any(parent == r or parent.startswith(r + os.sep) for r in allowed_roots()) else "",
+            "items": items[:300]}
 
 # ---------------------------------------------------------------- wifi
 def nm_split(line):
@@ -850,7 +1045,10 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(e, 403)
         except FileNotFoundError as e:
             self.fail(e, 404)
+        except (BrokenPipeError, ConnectionResetError):
+            pass                                   # الطرف الثاني سكّر الاتصال — مو عطل
         except Exception as e:  # noqa
+            err_log("server", "%s: %s" % (name, e))
             self.fail(e, 500)
 
     # -- endpoints
@@ -1181,6 +1379,7 @@ class Handler(BaseHTTPRequestHandler):
                   "deny": [d for d in (box(x) for x in (b.get("deny") or [])[:40]) if d],
                   "color": str(b.get("color") or "#111827")[:9], "width": num(b.get("width"), 0.003),
                   "tail": int(num(b.get("tail"), 110)), "cancel": int(num(b.get("cancel"))),
+                  "pred": max(0, min(80, int(num(b.get("pred"), 0)))),
                   "cal": {"ok": bool(cal.get("ok")), "swap": bool(cal.get("swap")), "ax": num(cal.get("ax"), 1.0),
                           "bx": num(cal.get("bx")), "ay": num(cal.get("ay"), 1.0), "by": num(cal.get("by"))}}
             os.makedirs(cache, exist_ok=True)
@@ -1553,6 +1752,112 @@ class Handler(BaseHTTPRequestHandler):
         job = start_job("timezone", [tz])
         return job
 
+
+    # ------------------------------------------------------------ 3.0: remote / system
+    def api_remote(self, m, q):
+        import alharthia_remote as rm
+        if m == "POST":
+            b = self.jbody()
+            a = b.get("action")
+            if a == "pair":
+                return dict(rm.status(), pairing=rm.pair_start())
+            if a == "cancel":
+                rm.pair_cancel()
+            elif a == "remove":
+                rm.remove_device(b.get("id"))
+            elif a == "rename":
+                rm.rename_device(b.get("id"), b.get("name", ""))
+            elif a == "enable":
+                rm.set_enabled(b.get("on", True))
+            elif a == "hotspot":
+                return rm.hotspot(bool(b.get("on")), HELPER)
+            elif a == "notify":
+                rm.push({"a": "notify", "text": str(b.get("text", ""))[:200], "level": b.get("level", "info")})
+        return rm.status()
+
+    def api_remote_poll(self, m, q):
+        import alharthia_remote as rm
+        after = int((q.get("after") or ["0"])[0] or 0)
+        return rm.poll(after, timeout=min(25.0, float((q.get("wait") or ["20"])[0] or 20)))
+
+    def api_remote_state(self, m, q):
+        import alharthia_remote as rm
+        if m == "POST":
+            rm.set_state(self.jbody())
+            return {"ok": True}
+        return rm.get_state(-1, 0)
+
+    def api_remote_tasks(self, m, q):
+        import alharthia_remote as rm
+        return rm.tasks_do(self.jbody()) if m == "POST" else rm.tasks()
+
+    def api_log(self, m, q):
+        if m == "POST":
+            b = self.jbody()
+            err_log(b.get("src", "ui"), b.get("msg", ""))
+            return {"ok": True}
+        return {"items": err_read(int((q.get("n") or ["200"])[0] or 200)), "path": ERR_LOG}
+
+    def api_log_clear(self, m, q):
+        try:
+            open(ERR_LOG, "w").close()
+        except OSError:
+            pass
+        return {"ok": True}
+
+    def api_health(self, m, q):
+        return health()
+
+    def api_usbupdate(self, m, q):
+        if m == "POST":
+            path = self.jbody().get("path", "")
+            if not any(u["path"] == path for u in usb_updates()):
+                raise PermissionError("ملف التحديث مو موجود على الفلاشة")
+            return start_job("usb-update", [path])
+        return {"items": usb_updates()}
+
+    def api_checkpw(self, m, q):
+        """يتأكد من كلمة مرور النظام (OS_PASSWORD) — للعمليات الخطرة مثل إعادة ضبط المصنع."""
+        pw = str(self.jbody().get("pw", ""))
+        if not pw or len(pw) > 200:
+            return {"ok": False}
+        time.sleep(0.6)  # تبطيء التخمين
+        try:
+            r = subprocess.run(["sudo", "-n", HELPER, "checkpw"], input=pw + "\n", capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            return {"ok": False, "error": "تعذر التحقق"}
+        return {"ok": r.returncode == 0}
+
+    def api_factory(self, m, q):
+        """إعادة ضبط المصنع (جهة النظام): يمسح الريموتات والمهام والسجلات — الملفات الشخصية تبقى."""
+        pw = str(self.jbody().get("pw", ""))
+        r = subprocess.run(["sudo", "-n", HELPER, "checkpw"], input=pw + "\n", capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            raise PermissionError("كلمة مرور النظام غلط")
+        conf = os.path.join(HOME, ".config", "alharthia")
+        for n in ("remotes.json", "teacher-tasks.json", "osk.json"):
+            try:
+                os.remove(os.path.join(conf, n))
+            except OSError:
+                pass
+        for d in (os.path.join(HOME, ".cache", "alharthia"),):
+            shutil.rmtree(d, ignore_errors=True)
+        err_log("system", "factory reset")
+        return {"ok": True}
+
+    def api_light(self, m, q):
+        return {"lux": read_light()}
+
+    def api_motion(self, m, q):
+        """حركة أمام الصبورة (الكاميرا الثانية) — نسبة التغيّر بين صورتين."""
+        try:
+            import alharthia_cam as cam
+            if hasattr(cam, "motion_level"):
+                return {"level": cam.motion_level()}
+        except Exception as e:  # noqa
+            return {"level": None, "error": str(e)}
+        return {"level": None}
+
     def api_power(self, m, q):
         action = self.jbody().get("action")
         cmd = {"off": ["systemctl", "poweroff"], "reboot": ["systemctl", "reboot"]}.get(action)
@@ -1630,6 +1935,11 @@ def bt_watch():
 def main():
     ensure_folders()
     threading.Thread(target=bt_watch, daemon=True).start()
+    try:
+        import alharthia_remote as rm
+        rm.start(UI_DIR, remote_fs, VERSION)
+    except Exception as e:  # noqa
+        err_log("remote", e)
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     srv.daemon_threads = True
     print(f"Alharthia service on http://{HOST}:{PORT}/", flush=True)

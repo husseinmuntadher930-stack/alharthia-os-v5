@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ريموت AlharthiaOS</title>
+<style>
+:root{--acc:#f0703e;--bg:#0a1228;--bg2:#101c3d;--card:#16254d;--card2:#1d2f5e;--line:rgba(255,255,255,.1);--text:#f1f5ff;--mut:#93a6cf;--ok:#22c55e;--bad:#ef4444;--teal:#2dd4bf;
+  --font:"IBM Plex Sans Arabic","Noto Sans Arabic UI","Noto Sans Arabic","DejaVu Sans",sans-serif;--osk-h:0px;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-user-select:none;user-select:none;touch-action:manipulation}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+input{font:inherit}
+svg.i{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+[hidden]{display:none!important}
+/*__OSK_CSS__*/
+#osk{z-index:50}
+/* ---------- layout ---------- */
+#app{position:fixed;inset:0;bottom:var(--osk-h);display:grid;grid-template-rows:46px 1fr 62px}
+header{display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--bg2);border-bottom:1px solid var(--line)}
+header .dot{width:10px;height:10px;border-radius:50%;background:var(--bad);box-shadow:0 0 10px var(--bad);flex:none}
+header .dot.on{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+header .ttl{font-weight:800;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .ttl b{color:var(--acc)}
+header .scr{color:var(--mut);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+header .les{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--card);white-space:nowrap}
+header .les.warn{background:#7c2d12;color:#fed7aa}
+header .clk{font-weight:800;font-size:16px;direction:ltr}
+main{position:relative;overflow:hidden}
+.tab{position:absolute;inset:0;padding:10px 12px;overflow:auto}
+nav{display:grid;grid-template-columns:repeat(5,1fr);background:var(--bg2);border-top:1px solid var(--line)}
+nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:13px;font-weight:600;color:var(--mut)}
+nav button svg{font-size:23px}
+nav button.on{color:var(--acc)}
+/* ---------- home ---------- */
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;height:calc(100% - 14px);grid-template-rows:1.25fr 1fr 1fr}
+.tile{background:var(--card);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:15px;border:1px solid var(--line);position:relative;min-height:0}
+.tile svg{font-size:30px}
+.tile:active{transform:scale(.97);background:var(--card2)}
+.tile.acc{background:linear-gradient(160deg,#ff8a4c,#e2582a);border:0}
+.tile.wide{grid-column:span 2}
+.tile.dis{opacity:.4;pointer-events:none}
+.pick{grid-column:span 2;grid-row:span 1;background:linear-gradient(160deg,#1f3b80,#13265a);flex-direction:row;gap:14px;padding:0 16px;justify-content:flex-start}
+.pick .nm{font-size:22px;font-weight:800;line-height:1.2;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pick small{display:block;font-size:13px;color:var(--mut);font-weight:600}
+.pick .dice{width:62px;height:62px;border-radius:16px;background:var(--acc);display:grid;place-items:center;flex:none}
+.pick .dice svg{font-size:34px}
+.pgline{font-size:13px;color:var(--mut);font-weight:600}
+/* ---------- write / pointer ---------- */
+.padwrap{position:absolute;inset:8px 74px 8px 8px;display:flex;align-items:center;justify-content:center}
+.pad{position:relative;background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.4);touch-action:none;overflow:hidden}
+.pad.dark{background:#122;}
+.pad canvas{position:absolute;inset:0;width:100%;height:100%}
+.pad.ptr{background:repeating-linear-gradient(0deg,transparent 0 39px,rgba(255,255,255,.06) 39px 40px),repeating-linear-gradient(90deg,transparent 0 39px,rgba(255,255,255,.06) 39px 40px),#0d1733;border:2px dashed rgba(255,255,255,.18)}
+.pad .hint{position:absolute;inset:0;display:grid;place-items:center;color:var(--mut);font-size:16px;font-weight:600;pointer-events:none;text-align:center;padding:20px}
+.side{position:absolute;top:8px;bottom:8px;right:8px;width:58px;display:flex;flex-direction:column;gap:7px}
+.side button{flex:1;min-height:0;border-radius:14px;background:var(--card);display:grid;place-items:center;border:2px solid transparent}
+.side button svg{font-size:24px}
+.side button.on{border-color:var(--acc)}
+.side .sw{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.6)}
+/* ---------- files / tasks ---------- */
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bar .path{flex:1;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;border-radius:12px;background:var(--card);font-weight:700;font-size:15px;border:1px solid var(--line)}
+.btn.pri{background:var(--acc);border:0}
+.btn svg{font-size:19px}
+.list{display:flex;flex-direction:column;gap:7px}
+.row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--card);border-radius:14px;border:1px solid var(--line);font-size:16px;font-weight:600}
+.row:active{background:var(--card2)}
+.row .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--card2)}
+.row .ic svg{font-size:21px}
+.row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row small{color:var(--mut);font-weight:500;font-size:13px}
+.row.done .nm{text-decoration:line-through;color:var(--mut)}
+.chk{width:30px;height:30px;border-radius:9px;border:2px solid var(--mut);display:grid;place-items:center;flex:none}
+.row.done .chk{background:var(--ok);border-color:var(--ok)}
+.empty{text-align:center;color:var(--mut);padding:30px 10px;font-size:16px}
+.field{flex:1;height:46px;border-radius:12px;border:1px solid var(--line);background:#0b1636;color:var(--text);padding:0 14px;font-size:16px;outline:none;min-width:0}
+.field:focus{border-color:var(--acc)}
+/* ---------- overlays ---------- */
+.ov{position:fixed;inset:0;bottom:var(--osk-h);background:rgba(4,8,20,.88);display:flex;align-items:center;justify-content:center;z-index:30;padding:14px}
+.box{background:var(--bg2);border:1px solid var(--line);border-radius:22px;padding:18px 20px;width:min(560px,100%);max-height:100%;overflow:auto}
+.box h2{margin:0 0 6px;font-size:21px}
+.box p{margin:0 0 12px;color:var(--mut)}
+.roles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:8px 0 12px}
+.roles button{padding:14px 6px;border-radius:16px;background:var(--card);border:2px solid transparent;font-weight:800;font-size:17px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.roles button.on{border-color:var(--acc)}
+.roles button svg{font-size:28px}
+.err{color:#fca5a5;font-weight:700;min-height:22px;margin:4px 0}
+.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+#toast{position:fixed;left:50%;top:56px;transform:translateX(-50%);background:#0b1636;border:1px solid var(--line);padding:10px 18px;border-radius:999px;font-weight:700;z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.4);white-space:nowrap}
+#note{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;background:rgba(124,45,18,.94);flex-direction:column;gap:14px;text-align:center;padding:20px}
+#note b{font-size:30px}
+#note span{font-size:18px;opacity:.85}
+#dim{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .6s;z-index:80}
+/* ---------- pairing ---------- */
+#pair{position:fixed;inset:0;bottom:var(--osk-h);display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:18px;align-items:center;background:radial-gradient(120% 90% at 30% 20%,#13265a 0%,#0b1430 60%,#060b1a 100%)}
+#pair .brand{font-size:30px;font-weight:900;margin-bottom:6px}
+#pair .brand b{color:var(--acc)}
+#pair .pins{display:flex;gap:8px;direction:ltr;margin:14px 0}
+#pair .pins i{width:46px;height:58px;border-radius:12px;background:var(--card);border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:28px;font-weight:800}
+#pair .pins i.cur{border-color:var(--acc)}
+.num{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;direction:ltr}
+.num button{height:62px;border-radius:14px;background:var(--card);font-size:26px;font-weight:800;border:1px solid var(--line)}
+.num button:active{background:var(--card2)}
+.num button.ok{background:var(--acc);border:0}
+</style>
+</head>
+<body>
+<div id="pair" hidden>
+  <div>
+    <div class="brand">Alharthia<b>OS</b> · الريموت</div>
+    <p style="color:var(--mut);margin:0;font-size:16px;line-height:1.6">من الصبورة: <b style="color:var(--text)">الإعدادات ← الريموت ← ربط ريموت جديد</b><br>واكتب الرمز الي يطلع على الصبورة.</p>
+    <div class="pins" id="pins"></div>
+    <div class="err" id="pairErr"></div>
+  </div>
+  <div class="num" id="num"></div>
+</div>
+
+<div id="app" hidden>
+  <header><span class="dot" id="dot"></span><span class="ttl">Alharthia<b>OS</b></span><span class="scr" id="scr"></span>
+    <span class="les" id="les" hidden></span><span class="clk" id="clk"></span></header>
+  <main>
+    <section class="tab" data-tab="home"></section>
+    <section class="tab" data-tab="write" hidden></section>
+    <section class="tab" data-tab="ptr" hidden></section>
+    <section class="tab" data-tab="files" hidden></section>
+    <section class="tab" data-tab="tasks" hidden></section>
+  </main>
+  <nav id="nav">
+    <button data-go="home" class="on"><svg class="i" data-i="home"></svg>الرئيسية</button>
+    <button data-go="write"><svg class="i" data-i="pen"></svg>الكتابة</button>
+    <button data-go="ptr"><svg class="i" data-i="laser"></svg>المؤشر</button>
+    <button data-go="files"><svg class="i" data-i="folder"></svg>الملفات</button>
+    <button data-go="tasks"><svg class="i" data-i="check"></svg>المهام</button>
+  </nav>
+</div>
+<div id="toast" hidden></div>
+<div id="note" hidden></div>
+<div id="dim"></div>
+
+<script>
+"use strict";
+/*__CORE__*/
+ICONS.lock=ICONS.lock||'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
+ICONS.unlock='<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>';
+ICONS.check=ICONS.check||'<path d="m5 12 5 5 9-10"/>';
+ICONS.home=ICONS.home||'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h5v-6h4v6h5V9.5"/>';
+ICONS.curtain='<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M3 3h18v9H3z" fill="currentColor" fill-opacity=".3"/>';
+ICONS.swap=ICONS.swap||'<path d="M7 4 3 8l4 4"/><path d="M3 8h12a4 4 0 0 1 4 4"/><path d="m17 20 4-4-4-4"/><path d="M21 16H9a4 4 0 0 1-4-4"/>';
+ICONS.pageNew='<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>';
+ICONS.back=ICONS.chevR;
+ICONS.bell='<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>';
+const S={kbdLangs:['ar','en'],kbdLang:'ar',oskMode:'auto',oskSize:'s',oskPreview:false,oskTermKeys:false,ar:true,clickSound:false,emojiRecent:[]};
+function save(){} function go(){}
+const nf=v=>String(v).replace(/\d/g,d=>AR_D[d]);
+</script>
+<script>
+"use strict";
+/*__KEYBOARD__*/
+</script>
+<script>
+"use strict";
+/* =====================================================================
+   ريموت المعلم — صفحة تشتغل على Raspberry Pi Zero 2 W ويا شاشة 5 إنج
+   ===================================================================== */
+const R={
+  tok:'', st:{}, v:0, online:false, tab:'home', path:'', files:null, tasks:[], color:'#111827', pen:'pen', ptrMode:'laser',
+  q:[], sending:false, lastNote:0, idleT:0,
+  async api(p,body){
+    const o={method:body?'POST':'GET',headers:{'X-Remote-Token':this.tok}};
+    if(body){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
+    const r=await fetch(p,o); if(r.status===401){ this.unpair(); throw new Error('unpaired'); }
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j;
+  },
+  toast(t){ const el=$('#toast'); el.textContent=t; el.hidden=false; clearTimeout(this.tt); this.tt=setTimeout(()=>el.hidden=true,2200); },
+  init(){
+    try{ this.tok=localStorage.getItem('alhRemoteTok')||''; }catch(e){}
+    // سكربت التجهيز يربط الريموت ويحط المفتاح بالرابط (?k=…) — يشتغل حتى لو المتصفح ما يحفظ شي
+    const qk=new URLSearchParams(location.search).get('k'); if(qk){ this.tok=qk; try{ localStorage.setItem('alhRemoteTok',qk); }catch(e){} }
+    Keyboard.init();
+    paintIcons(document);
+    $('#nav').addEventListener('click',e=>{ const b=e.target.closest('[data-go]'); if(b) this.show(b.dataset.go); });
+    addEventListener('pointerdown',()=>this.wake(),true);
+    setInterval(()=>this.clock(),1000); this.clock();
+    if(this.tok) this.start(); else this.pairUI();
+  },
+  /* ---------- الربط ---------- */
+  pairUI(){
+    $('#app').hidden=true; $('#pair').hidden=false; let pin='';
+    const draw=()=>{ $('#pins').innerHTML=[0,1,2,3,4,5].map(i=>`<i class="${i===pin.length?'cur':''}">${pin[i]||''}</i>`).join(''); };
+    $('#num').innerHTML=['1','2','3','4','5','6','7','8','9','⌫','0','✓'].map(k=>`<button data-k="${k}" class="${k==='✓'?'ok':''}">${k}</button>`).join('');
+    $('#num').onclick=async e=>{ const b=e.target.closest('[data-k]'); if(!b) return; const k=b.dataset.k;
+      if(k==='⌫') pin=pin.slice(0,-1); else if(k==='✓'||pin.length===5){ if(k!=='✓') pin+=k; draw(); if(pin.length===6) await this.pair(pin); pin=''; }
+      else pin+=k; draw(); };
+    draw();
+  },
+  async pair(pin){
+    $('#pairErr').textContent='';
+    try{ const r=await fetch('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin,name:'ريموت المعلم'})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error||'تعذر الربط');
+      this.tok=j.token; try{ localStorage.setItem('alhRemoteTok',j.token); }catch(e){}
+      $('#pair').hidden=true; this.start(); this.toast('تم الربط ✓');
+    }catch(e){ $('#pairErr').textContent=e.message; }
+  },
+  unpair(){ this.tok=''; try{ localStorage.removeItem('alhRemoteTok'); }catch(e){} this.pairUI(); },
+  /* ---------- الحالة ---------- */
+  start(){ $('#pair').hidden=true; $('#app').hidden=false; this.show('home'); this.loop(); this.loadTasks(); },
+  async loop(){
+    while(this.tok){
+      try{ const r=await this.api('/api/state?v='+this.v+'&wait=15'); this.online=!!r.board; if(r.v!==this.v){ this.v=r.v; this.st=r.state||{}; this.onState(); } }
+      catch(e){ this.online=false; if(e.message==='unpaired') return; await new Promise(r=>setTimeout(r,2000)); }
+      $('#dot').classList.toggle('on',this.online);
+    }
+  },
+  onState(){
+    const s=this.st; $('#scr').textContent=s.title||'';
+    if(s.note&&s.note.t>this.lastNote){ this.lastNote=s.note.t; if(Date.now()/1000-s.note.t<60) this.notify(s.note.text); }
+    if(s.tasksV&&s.tasksV!==this.tasksV){ this.tasksV=s.tasksV; this.loadTasks(); }
+    if(this.tab==='home') this.renderHome();
+    if(this.tab==='write'||this.tab==='ptr') this.fitPad();
+    this.lesson();
+  },
+  lesson(){
+    const L=this.st.lesson, el=$('#les'); if(!L||!L.end){ el.hidden=true; return; }
+    const left=Math.round(L.end-Date.now()/1000); if(left<=0){ el.hidden=true; return; }
+    el.hidden=false; el.classList.toggle('warn',left<=300);
+    el.textContent=`${L.subj||'الحصة'} · ${nf(Math.floor(left/60))}:${nf(String(left%60).padStart(2,'0'))}`;
+  },
+  clock(){ const d=new Date(); $('#clk').textContent=nf(d.getHours()%12||12)+':'+nf(String(d.getMinutes()).padStart(2,'0')); this.lesson(); },
+  notify(text){
+    const n=$('#note'); n.innerHTML=`<svg class="i" style="font-size:54px" data-i="bell"></svg><b>${esc(text)}</b><span>المس الشاشة للإغلاق</span>`; paintIcons(n); n.hidden=false;
+    let k=0; const fl=setInterval(()=>{ n.style.background=(k++%2)?'rgba(124,45,18,.94)':'rgba(194,65,12,.96)'; if(k>9) clearInterval(fl); },300);
+    n.onclick=()=>{ n.hidden=true; clearInterval(fl); };
+    try{ const ac=new AudioContext(), o=ac.createOscillator(), g=ac.createGain(); o.frequency.value=880; o.connect(g); g.connect(ac.destination); g.gain.setValueAtTime(.2,ac.currentTime); g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.6); o.start(); o.stop(ac.currentTime+.6); }catch(e){}
+  },
+  /* سطوع: الشاشة تخفت بعد دقيقتين بدون لمس — توفير بطارية */
+  wake(){ $('#dim').style.opacity=0; clearTimeout(this.idleT); this.idleT=setTimeout(()=>{ $('#dim').style.opacity=.7; },120e3); },
+  /* ---------- الأوامر ---------- */
+  cmd(o){ this.q.push(o); this.flush(); },
+  async flush(){
+    if(this.sending||!this.q.length) return; this.sending=true;
+    const batch=this.q.splice(0,50);
+    try{ await this.api('/api/cmd',{cmds:batch}); }catch(e){ if(e.message!=='unpaired') this.toast('الصبورة ما ترد — تأكد من الشبكة'); }
+    this.sending=false; if(this.q.length) setTimeout(()=>this.flush(),0);
+  },
+  show(t){
+    this.tab=t; $$('#nav [data-go]').forEach(b=>b.classList.toggle('on',b.dataset.go===t));
+    $$('main .tab').forEach(s=>s.hidden=s.dataset.tab!==t);
+    if(t==='home') this.renderHome();
+    if(t==='write') this.renderWrite();
+    if(t==='ptr') this.renderPtr();
+    if(t==='files') this.loadFiles(this.path);
+    if(t==='tasks') this.renderTasks();
+    Keyboard.hide&&Keyboard.hide();
+  },
+  /* ---------- الرئيسية ---------- */
+  renderHome(){
+    const s=this.st, pk=s.picked||{}, pg=s.page||{}, el=$('[data-tab=home]');
+    const pgTxt=pg.total?`${pg.kind==='pdf'?'صفحة':pg.kind==='slides'?'شريحة':'صفحة السبورة'} ${nf(pg.cur)} من ${nf(pg.total)}`:'';
+    el.innerHTML=`<div class="grid">
+      <button class="tile pick" data-c="pick"><span class="dice"><svg class="i" data-i="dice"></svg></span><span class="nm">${pk.name?esc(pk.name):'القرعة'}<small>${pk.name?`باقي ${nf(pk.left)} من ${nf(pk.total)}`:'اختيار طالب عشوائي — بدون تكرار'}</small></span></button>
+      <button class="tile" data-c="prev"><svg class="i" data-i="chevR"></svg>السابق</button>
+      <button class="tile" data-c="next"><svg class="i" data-i="chevL"></svg>التالي</button>
+      <button class="tile acc" data-c="board"><svg class="i" data-i="board"></svg>السبورة</button>
+      <button class="tile" data-c="${s.locked?'unlock':'lock'}"><svg class="i" data-i="${s.locked?'unlock':'lock'}"></svg>${s.locked?'فتح القفل':'قفل الشاشة'}</button>
+      <button class="tile" data-c="role"><svg class="i" data-i="users"></svg>${esc(s.roleName||'المستخدم')}</button>
+      <button class="tile" data-c="curtain"><svg class="i" data-i="curtain"></svg>${s.curtain?'كشف الستارة':'ستارة'}</button>
+      <button class="tile" data-c="undo"><svg class="i" data-i="undo"></svg>تراجع</button>
+      <button class="tile" data-c="redo"><svg class="i" data-i="redo"></svg>إعادة</button>
+      <button class="tile" data-c="pickReset"><svg class="i" data-i="restart"></svg>تصفير القرعة</button>
+      <button class="tile" data-c="home"><svg class="i" data-i="home"></svg>الشاشة الرئيسية</button>
+    </div>${pgTxt?`<div class="pgline" style="position:absolute;bottom:2px;left:14px">${pgTxt}</div>`:''}`;
+    paintIcons(el);
+    el.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; const c=b.dataset.c;
+      if(c==='role') return this.roleBox();
+      if(c==='unlock') return this.unlockBox();
+      this.cmd({a:c}); if(c==='pick') b.querySelector('.nm').firstChild.textContent='…'; };
+  },
+  roleBox(){
+    const cur=this.st.role||'teacher'; let sel=cur;
+    const ov=document.createElement('div'); ov.className='ov';
+    ov.innerHTML=`<div class="box"><h2>تبديل المستخدم</h2><p>إذا المستخدم مقفل بكلمة مرور اكتبها تحت.</p>
+      <div class="roles">${[['student','الطالب'],['teacher','الأستاذ'],['dev','المطوّر']].map(([k,n])=>`<button data-r="${k}" class="${k===cur?'on':''}"><svg class="i" data-i="users"></svg>${n}</button>`).join('')}</div>
+      <div style="display:flex;gap:8px"><input class="field" id="rPw" type="password" placeholder="كلمة المرور (إذا موجودة)"></div>
+      <div class="err" id="rErr"></div>
+      <div class="btns"><button class="btn" data-b="x">إلغاء</button><button class="btn pri" data-b="ok"><svg class="i" data-i="check"></svg>تبديل</button></div></div>`;
+    document.body.appendChild(ov); paintIcons(ov);
+    ov.onclick=async e=>{ const r=e.target.closest('[data-r]'); if(r){ sel=r.dataset.r; $$('[data-r]',ov).forEach(x=>x.classList.toggle('on',x===r)); return; }
+      const b=e.target.closest('[data-b]'); if(!b) return; if(b.dataset.b==='x'){ Keyboard.hide(); ov.remove(); return; }
+      this.cmd({a:'role',k:sel,pw:$('#rPw',ov).value}); Keyboard.hide(); ov.remove(); this.toast('تم الإرسال للصبورة'); };
+  },
+  unlockBox(){
+    if(!this.st.lockPw){ this.cmd({a:'unlock'}); return; }
+    const ov=document.createElement('div'); ov.className='ov';
+    ov.innerHTML=`<div class="box"><h2>فتح القفل</h2><p>اكتب كلمة مرور ${esc(this.st.roleName||'المستخدم')}</p>
+      <input class="field" id="uPw" type="password" placeholder="كلمة المرور" style="width:100%">
+      <div class="btns"><button class="btn" data-b="x">إلغاء</button><button class="btn pri" data-b="ok"><svg class="i" data-i="unlock"></svg>فتح</button></div></div>`;
+    document.body.appendChild(ov); paintIcons(ov); setTimeout(()=>$('#uPw',ov).focus(),50);
+    ov.onclick=e=>{ const b=e.target.closest('[data-b]'); if(!b) return; if(b.dataset.b==='ok') this.cmd({a:'unlock',pw:$('#uPw',ov).value}); Keyboard.hide(); ov.remove(); };
+  },
+  /* ---------- الكتابة من الريموت ---------- */
+  renderWrite(){
+    const el=$('[data-tab=write]'), cols=['#111827','#2563eb','#dc2626','#16a34a','#f0703e','#ffffff'];
+    el.innerHTML=`<div class="side">${cols.map(c=>`<button data-col="${c}" class="${c===this.color?'on':''}"><span class="sw" style="background:${c}"></span></button>`).join('')}
+      <button data-w="hl" class="${this.pen==='hl'?'on':''}"><svg class="i" data-i="marker"></svg></button>
+      <button data-w="undo"><svg class="i" data-i="undo"></svg></button>
+      <button data-w="newpage"><svg class="i" data-i="pageNew"></svg></button></div>
+      <div class="padwrap"><div class="pad" id="wPad"><canvas id="wCv"></canvas><div class="hint" id="wHint">اكتب هنا — الكتابة تطلع على الصبورة</div></div></div>`;
+    paintIcons(el);
+    el.querySelector('.side').onclick=e=>{ const c=e.target.closest('[data-col]'); if(c){ this.color=c.dataset.col; if(this.pen==='hl') this.pen='pen'; this.renderWrite(); return; }
+      const w=e.target.closest('[data-w]'); if(!w) return; const a=w.dataset.w;
+      if(a==='hl'){ this.pen=this.pen==='hl'?'pen':'hl'; this.renderWrite(); return; }
+      if(a==='undo') this.cmd({a:'undo'}); if(a==='newpage'){ this.cmd({a:'newpage'}); this.clearPad(); } };
+    this.fitPad(); this.bindPad($('#wPad'),'ink');
+  },
+  renderPtr(){
+    const el=$('[data-tab=ptr]');
+    el.innerHTML=`<div class="side"><button data-m="laser" class="${this.ptrMode==='laser'?'on':''}"><svg class="i" data-i="laser"></svg></button>
+      <button data-m="prev"><svg class="i" data-i="chevR"></svg></button><button data-m="next"><svg class="i" data-i="chevL"></svg></button></div>
+      <div class="padwrap"><div class="pad ptr" id="pPad"><div class="hint">حرّك إصبعك هنا — تطلع نقطة ليزر حمرة على الصبورة بنفس المكان</div></div></div>`;
+    paintIcons(el);
+    el.querySelector('.side').onclick=e=>{ const b=e.target.closest('[data-m]'); if(!b) return; if(b.dataset.m!=='laser') this.cmd({a:b.dataset.m}); };
+    this.fitPad(); this.bindPad($('#pPad'),'laser');
+  },
+  fitPad(){
+    for(const id of ['wPad','pPad']){ const p=$('#'+id); if(!p) continue; const box=p.parentElement, ar=this.st.ar||16/9;
+      let w=box.clientWidth, h=w/ar; if(h>box.clientHeight){ h=box.clientHeight; w=h*ar; }
+      p.style.width=w+'px'; p.style.height=h+'px'; p.classList.toggle('dark',!!this.st.boardDark&&id==='wPad');
+      const cv=p.querySelector('canvas'); if(cv&&(cv.width!==Math.round(w*devicePixelRatio))){ cv.width=Math.round(w*devicePixelRatio); cv.height=Math.round(h*devicePixelRatio); } }
+  },
+  clearPad(){ const cv=$('#wCv'); if(cv) cv.getContext('2d').clearRect(0,0,cv.width,cv.height); },
+  bindPad(pad,kind){
+    let id=null, last=null, buf=[], lastSend=0;
+    const pt=e=>{ const r=pad.getBoundingClientRect(); return [(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.width]; };
+    const send=(ph)=>{ if(kind==='ink'){ if(buf.length||ph!=='m') this.cmd({a:'ink',id,ph,pts:buf.splice(0),c:this.color,k:this.pen}); } };
+    pad.onpointerdown=e=>{ e.preventDefault(); pad.setPointerCapture(e.pointerId); id=Math.random().toString(36).slice(2,9); last=pt(e);
+      const h=$('#wHint'); if(h) h.hidden=true;
+      if(kind==='ink'){ buf=[last]; send('s'); } else this.cmd({a:'laser',x:last[0],y:last[1]});
+      lastSend=performance.now(); };
+    pad.onpointermove=e=>{ if(!id) return; const p=pt(e);
+      if(kind==='ink'){ const cv=$('#wCv'); if(cv){ const x=cv.getContext('2d'), W=cv.width; x.strokeStyle=this.color; x.globalAlpha=this.pen==='hl'?.35:1; x.lineWidth=(this.pen==='hl'?16:3.5)*devicePixelRatio; x.lineCap='round'; x.beginPath(); x.moveTo(last[0]*W,last[1]*W); x.lineTo(p[0]*W,p[1]*W); x.stroke(); }
+        buf.push(p); if(performance.now()-lastSend>40){ lastSend=performance.now(); send('m'); } }
+      else if(performance.now()-lastSend>33){ lastSend=performance.now(); this.cmd({a:'laser',x:p[0],y:p[1]}); }
+      last=p; };
+    const end=()=>{ if(!id) return; if(kind==='ink') send('e'); else this.cmd({a:'laserEnd'}); id=null; };
+    pad.onpointerup=end; pad.onpointercancel=end;
+  },
+  /* ---------- الملفات ---------- */
+  async loadFiles(path){
+    const el=$('[data-tab=files]'); el.innerHTML='<div class="empty">جاري التحميل…</div>';
+    try{ const r=await this.api('/api/files?path='+encodeURIComponent(path||'')); this.path=r.path; this.files=r; this.renderFiles(); }
+    catch(e){ el.innerHTML=`<div class="empty">تعذر جلب الملفات — ${esc(e.message)}</div>`; }
+  },
+  renderFiles(){
+    const r=this.files, el=$('[data-tab=files]'), ic=e=>e.dir?'folder':({pdf:'pdf',pptx:'slides',docx:'word',xlsx:'table',png:'image',jpg:'image',jpeg:'image',webp:'image',board:'board'}[e.ext]||'doc');
+    el.innerHTML=`<div class="bar">${r.path?`<button class="btn" data-up="1"><svg class="i" data-i="chevR"></svg>رجوع</button>`:''}<span class="path">${r.path?esc(r.path.split('/').slice(-1)[0]):'المجلدات'}</span></div>
+      <div class="list">${r.items.length?r.items.map((e,i)=>`<button class="row" data-i="${i}"><span class="ic"><svg class="i" data-i="${ic(e)}"></svg></span><span class="nm">${esc(e.name)}</span>${e.dir?'':`<small>${fmt(e.size)}</small>`}</button>`).join(''):'<div class="empty">ماكو ملفات هنا</div>'}</div>`;
+    paintIcons(el);
+    el.onclick=e=>{ if(e.target.closest('[data-up]')){ this.loadFiles(r.parent||''); return; }
+      const b=e.target.closest('.row[data-i]'); if(!b) return; const it=r.items[+b.dataset.i];
+      if(it.dir) this.loadFiles(it.path); else { this.cmd({a:'open',path:it.path,name:it.name,ext:it.ext,size:it.size,mtime:it.mtime}); this.toast('جاري فتح '+it.name); } };
+  },
+  /* ---------- مهام المعلم ---------- */
+  async loadTasks(){ try{ const r=await this.api('/api/tasks'); this.tasks=r.items||[]; if(this.tab==='tasks') this.renderTasks(); }catch(e){} },
+  async taskOp(o){ try{ const r=await this.api('/api/tasks',o); this.tasks=r.items; this.renderTasks(); }catch(e){ this.toast('تعذر الحفظ'); } },
+  renderTasks(){
+    const el=$('[data-tab=tasks]'), open=this.tasks.filter(t=>!t.done).length;
+    el.innerHTML=`<div class="bar"><input class="field" id="tIn" type="text" placeholder="مهمة جديدة… مثلاً: صحح دفاتر الثالث ج"><button class="btn pri" data-t="add"><svg class="i" data-i="plus"></svg>إضافة</button></div>
+      <div class="list">${this.tasks.length?this.tasks.map(t=>`<div class="row${t.done?' done':''}"><button class="chk" data-t="toggle" data-id="${t.id}">${t.done?'<svg class="i" data-i="check"></svg>':''}</button><span class="nm">${esc(t.text)}</span><button class="ic" data-t="del" data-id="${t.id}"><svg class="i" data-i="trash"></svg></button></div>`).join(''):'<div class="empty">ماكو مهام — اكتب مهمة فوك</div>'}</div>
+      ${this.tasks.some(t=>t.done)?`<div class="btns"><button class="btn" data-t="clearDone">مسح المنجزة</button></div>`:''}<p class="pgline">${nf(open)} مهمة باقية</p>`;
+    paintIcons(el);
+    const add=()=>{ const v=$('#tIn').value.trim(); if(v){ Keyboard.hide(); this.taskOp({op:'add',text:v}); } };
+    $('#tIn').onkeydown=e=>{ if(e.key==='Enter') add(); };
+    el.onclick=e=>{ const b=e.target.closest('[data-t]'); if(!b) return; const a=b.dataset.t; if(a==='add') add(); else this.taskOp({op:a,id:b.dataset.id}); };
+  }
+};
+const fmt=b=>b<1e3?b+' B':b<1e6?(b/1e3).toFixed(0)+' KB':(b/1e6).toFixed(1)+' MB';
+addEventListener('resize',()=>R.fitPad());
+R.init();
+</script>
+</body>
+</html>

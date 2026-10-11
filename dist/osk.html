@@ -284,8 +284,9 @@ const Keyboard={
   show(){
     const el=this.el; el.className='osk-'+(S.oskSize||'m')+(this.dark?' dk':''); el.hidden=false; this.render();
     requestAnimationFrame(()=>{ this.fit(); try{ this.target&&this.target.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} });
+    if(typeof Role!=='undefined'&&Role.asking) Role.kbdSync();
   },
-  hide(){ if(window.OSK_EXT) OSK_EXT.hide(); if(this.el.hidden) return; this.el.hidden=true; this.closeAlt(); document.documentElement.style.setProperty('--osk-h','0px'); this.page='abc'; },
+  hide(){ if(window.OSK_EXT) OSK_EXT.hide(); if(this.el.hidden) return; this.el.hidden=true; this.closeAlt(); document.documentElement.style.setProperty('--osk-h','0px'); this.page='abc'; if(typeof Role!=='undefined'&&Role.asking) Role.kbdSync(); },
   fit(){ const h=this.el.hidden?0:this.el.offsetHeight; if(window.OSK_EXT){ OSK_EXT.height(h); return; } if(window.OSK_SHADOW){ OSK_SHADOW.fit(h); return; } document.documentElement.style.setProperty('--osk-h',h+'px'); },
   rows(){
     if(this.page==='sym1') return OSK_SYM1;

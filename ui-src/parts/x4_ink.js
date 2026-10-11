@@ -51,7 +51,7 @@ const FastInk={
     $$('#instLayer > *').forEach(add);
     $$('#sideWrap > *, #spDiv, #osk, #topbar, #toast.on').forEach(add);
     const w=(B.sizes.ink/REF*B.W)/innerWidth;
-    return {on:true,rect:this.nr(live),deny,color:B.color,width:+w.toFixed(5),tail:S.inkTail||110,cancel:this.cancel,cal};
+    return {on:true,rect:this.nr(live),deny,color:B.color,width:+w.toFixed(5),tail:S.inkTail||110,pred:S.inkPred??25,cancel:this.cancel,cal};
   },
   sync(force){
     const st=this.state(), j=JSON.stringify(st);
@@ -120,10 +120,13 @@ const FastInk={
         <b class="cam-st${cal.ok?' ok':''}">${cal.ok?'✓ جاهزة':'تنتظر خطوط'}</b><button class="btn sm ghost" data-fi="recal">${icon('restart')}إعادة</button></div>
       <div class="row"><label>طول الحبر الطري<span class="hint">إذا تشوف الخط يتأخر ورا الحبر الطري زيده، وإذا تشوف خطين قلّله</span></label>
         <input type="range" min="60" max="220" step="10" value="${S.inkTail||110}" data-fi="tail"><b data-fi="tailv" style="min-width:64px;text-align:center">${nf(S.inkTail||110)} ms</b></div>
+      <div class="row"><label>توقّع الحركة<span class="hint">يمد الخط شوية قدّام إصبعك حتى يغطي تأخير الشاشات البطيئة. إذا تشوف الخط يطلع لبرّه بالمنحنيات قلّله</span></label>
+        <input type="range" min="0" max="80" step="5" value="${S.inkPred??25}" data-fi="pred"><b data-fi="predv" style="min-width:64px;text-align:center">${nf(S.inkPred??25)} ms</b></div>
       ${!run?`<div class="cam-note">${icon('info')}<span>البرنامج يشتغل وحده بعد إعادة تشغيل الجهاز (بعد التحديث). إذا بقى مو شغال: <code dir="ltr">cat ~/.local/share/alharthia-ink.log</code></span></div>`:''}`;
     paintIcons(c); $$('input[type=range]',c).forEach(setRangeFill);
     $('[data-fi=on]',c).onchange=e=>{ S.fastInk=e.target.checked; save(); this.sync(true); };
     $('[data-fi=recal]',c).onclick=()=>{ S.inkCal={ok:false}; this.pairs=[]; save(); this.sync(true); this.renderCard(); toast('ارسم ٣–٤ خطوط بالسبورة بأماكن متباعدة'); };
+    const pr=$('[data-fi=pred]',c); pr.oninput=()=>{ S.inkPred=+pr.value; setRangeFill(pr); $('[data-fi=predv]',c).textContent=nf(S.inkPred)+' ms'; save(); };
     const tr=$('[data-fi=tail]',c); tr.oninput=()=>{ S.inkTail=+tr.value; setRangeFill(tr); $('[data-fi=tailv]',c).textContent=nf(S.inkTail)+' ms'; save(); };
   }
 };

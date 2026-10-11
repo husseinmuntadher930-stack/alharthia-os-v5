@@ -1,0 +1,18 @@
+[connection]
+id=alharthia-camlink
+type=ethernet
+autoconnect=true
+
+[ethernet]
+mac-address=02:A1:7A:00:00:01
+
+[ipv4]
+method=manual
+# الراسبيري 4 (10.55.0.2) يعطي إنترنت لمن «البث» شغّال بواجهته — أولوية واطية: الواي فاي والـ Ethernet يسبقونه
+address1=10.55.0.1/24,10.55.0.2
+dns=10.55.0.2;
+dns-priority=200
+route-metric=900
+
+[ipv6]
+method=disabled

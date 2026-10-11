@@ -132,7 +132,7 @@ const store={
   set(k,v){try{localStorage.setItem('alharthia.'+k,JSON.stringify(v));return true}catch(e){return false}},
   del(k){try{localStorage.removeItem('alharthia.'+k)}catch(e){}}
 };
-const OS_VERSION='2.3.0', OS_NAME='AlharthiaOS 2.3';
+const OS_VERSION='3.0.0', OS_NAME='AlharthiaOS 3.0';
 const DEF={
   school:'ثانوية المتميزين في الحارثية', cls:'الصف الثالث متوسط -ج-',
   showSchool:true, showText:true, showLogo:true, strip:true, logo:null,

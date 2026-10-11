@@ -178,12 +178,13 @@ const CamView={
     const note=!s.cv?`<div class="cam-note">${icon('info')}<span>عرض الكاميرا يحتاج مكتبة OpenCV. تنزل وحدها مع التحديث، أو بالطرفية: <code dir="ltr">sudo apt install python3-opencv</code></span></div>`
       :!s.cams.length?`<div class="cam-note">${icon('info')}<span>ماكو كاميرا موصولة. وصّل كاميرا USB أو كاميرا الشريط (والجهاز مطفي) وراح تطلع هنا لحالها.</span></div>`
       :!cur?`<div class="cam-note">${icon('info')}<span>اختر الكاميرا من القائمة حتى تبدي الصورة.</span></div>`:'';
+    const lnk=cur&&cur.vidpid==='camlink'?`<div class="cam-note">${icon('info')}<span>الكاميرا جاية من الراسبيري 4 بكيبل USB-C: ٦٤٠×٤٨٠ على ١٢٠ صورة/ثانية (أبيض وأسود). إذا الراسبيري 4 يطفي لحاله، الكهرباء ما تكفي — استعمل مقسّم USB-C (بيانات + كهرباء).</span></div>`:'';
     const csi=cur&&cur.vidpid==='csi'?`<div class="cam-note">${icon('info')}<span>كاميرا الشريط (CSI): إذا ركّبتها فوك الصبورة وطلعت الصورة مقلوبة اضغط «تدوير».${/noir/i.test(cur.name)?' كاميرا NoIR ألوانها تطلع وردية شوية — هذا طبيعي.':''}</span></div>`:'';
     const eye=cur&&/PlayStation Eye/i.test(cur.name)?`<div class="cam-note">${icon('info')}<span>PS3 Eye: على العدسة حلقة بنقطتين — خلي النقطة <b>الزرقاء</b> (زاوية واسعة) حتى تشوف الشاشة كلها.</span></div>`:'';
     el.innerHTML=head+`<div class="card">
       <div class="row"><label>الكاميرا<span class="hint">${s.cams.length?'كل الكاميرات الموصولة (USB أو الشريط)':'ماكو كاميرا موصولة'}</span></label>
         <select class="field" data-cv="sel">${opts.join('')}</select><button class="btn sm ghost" data-cv="scan" title="تحديث">${icon('restart')}</button></div>
-      ${note}${eye}${csi}
+      ${note}${eye}${csi}${lnk}
       ${live?`<div class="cv-box${this.mirror?' mir':''}${S.camRot?' rot':''}" id="cvBox"><img id="cvImg" alt=""><div class="cv-err" id="cvErr" hidden></div>
         <div class="cv-bar"><b class="cam-st" id="cvStat">…</b><span class="grow"></span>
           <button class="btn sm" data-cv="mir">${icon('swap')}قلب الصورة</button>

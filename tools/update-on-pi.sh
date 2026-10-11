@@ -18,6 +18,8 @@ done
 echo "» تحديث الواجهة…"
 python3 "$ROOT/ui-src/build.py"
 cp -a "$ROOT/shell/." /opt/alharthia/
+# 3.0: سكربت تجهيز ريموت المعلم — الـ Zero ينزله من الصبورة نفسها (http://IP:8770/setup.sh)
+install -m 644 "$ROOT/tools/remote-zero-setup.sh" /opt/alharthia/remote-zero-setup.sh
 rm -f /opt/alharthia/alharthia_kbd_button.py
 chmod 755 /opt/alharthia/*.py
 install -m 755 "$ROOT/shell/helper/alharthia-helper" /usr/lib/alharthia/alharthia-helper
@@ -27,6 +29,30 @@ install -m 755 "$ROOT/stage-alharthia/01-shell/files/alharthia-keyboard-setup" /
 install -m 644 -o "$U" -g "$U" "$ROOT/stage-alharthia/02-session/files/rc.xml" "$H/.config/labwc/rc.xml"
 install -m 755 -o "$U" -g "$U" "$ROOT/stage-alharthia/02-session/files/autostart" "$H/.config/labwc/autostart"
 install -m 644 -o "$U" -g "$U" "$ROOT/stage-alharthia/02-session/files/environment" "$H/.config/labwc/environment"
+# CamLink: الراسبيري 4 + كاميرا الشريط عن طريق USB-C (شبكة صغيرة 10.55.0.x)
+install -d -m 700 /etc/NetworkManager/system-connections
+install -m 600 "$ROOT/stage-alharthia/02-session/files/alharthia-camlink.nmconnection" /etc/NetworkManager/system-connections/alharthia-camlink.nmconnection
+nmcli connection reload 2>/dev/null || true
+# CamLink 2: الإنترنت من الراسبيري 4 عبر USB-C — نطبّق الإعداد الجديد إذا الكيبل موصول
+nmcli -w 8 connection up alharthia-camlink >/dev/null 2>&1 || true
+
+# ساعة DS1302 (RTC): الصبورة تعرف الوقت حتى لو طفت وماكو إنترنت
+apt-get install -y --no-install-recommends python3-lgpio || echo "تحذير: ما نزل python3-lgpio"
+cat > /etc/systemd/system/alharthia-rtc.service <<UNIT
+[Unit]
+Description=Alharthia OS — DS1302 clock module (keeps time without internet)
+After=time-sync.target systemd-timesyncd.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/alharthia/alharthia_rtc.py daemon
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload || true
+systemctl enable alharthia-rtc 2>/dev/null || true
 
 # AirPlay receiver (آيفون / آيباد يعكسون شاشتهم على الجهاز) — يشتغل عند الطلب فقط
 cat > /etc/systemd/system/alharthia-airplay.service <<UNIT

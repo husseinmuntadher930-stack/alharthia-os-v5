@@ -477,6 +477,30 @@ def run_qt(Q):
     beat.start(4000)
     write_focus(True)
 
+    # 3.0 — الرجوع التلقائي: إذا الواجهة علقت (الجافاسكربت ما يرد) نعيد تحميلها وحدها
+    alive = {"t": time.time(), "loaded": time.time()}
+
+    def pong(*_):
+        alive["t"] = time.time()
+
+    def ping():
+        try:
+            page.runJavaScript("1", pong)
+        except TypeError:
+            page.runJavaScript("1", 0, pong)
+        if time.time() - alive["t"] > 45 and time.time() - alive["loaded"] > 60:
+            log("interface not responding — reloading")
+            try:
+                with open(os.path.join(DATA, "session.log"), "a") as f:
+                    f.write(time.strftime("%Y-%m-%d %H:%M:%S") + " interface froze — reloaded automatically\n")
+            except OSError:
+                pass
+            alive["t"] = alive["loaded"] = time.time()
+            view.load(QUrl(URL))
+    watchdog = Q["QTimer"]()
+    watchdog.timeout.connect(ping)
+    watchdog.start(10000)
+
     if WINDOWED:
         view.resize(1600, 900)
         view.show()

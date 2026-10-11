@@ -9,12 +9,16 @@ ROOT = os.path.dirname(HERE)
 P = lambda *a: os.path.join(HERE, *a)
 PARTS = ['a_head.html', 'b_css.html', 'c_css.html', 'd_body.html', 'e_core.js', 'f_brand.js',
          'g_board1.js', 'g_board2.js', 'g_board3.js', 'g_board4.js', 'h_pdf.js', 'i_fs.js', 'j_office.js',
-         'k_store.js', 'm_ported.js', 'n_extra.js', 'o_apps.js', 'p_attend.js', 'x3_table.js', 's_media.js', 't_picker.js', 'u_term.js', 'w_side.js', 'w2_split.js', 'z_qr.js', 'x_cast.js', 'x2_cam.js', 'x4_ink.js', 'y_lang.js', 'q_native.js', 'v_roles.js', 'r_keyboard.js', 'l_sys.js']
+         'k_store.js', 'm_ported.js', 'n_extra.js', 'o_apps.js', 'p_attend.js', 'x3_table.js', 's_media.js', 't_picker.js', 'u_term.js', 'w_side.js', 'w2_split.js', 'z_qr.js', 'x_cast.js', 'x2_cam.js', 'x4_ink.js', 'x5_remote.js', 'x6_class.js', 'x7_boardx.js', 'x8_system.js', 'y_lang.js', 'q_native.js', 'v_roles.js', 'r_keyboard.js', 'l_sys.js']
 ASSETS = {'__LOGO__': 'logo.b64', '__DEMOPDF__': 'demo.b64', '__DOCX__': 'sample.docx.b64',
           '__XLSX__': 'sample.xlsx.b64', '__PPTX__': 'sample.pptx.b64'}
 
 def build(demo):
     s = ''.join(open(P('parts', p), encoding='utf-8').read() for p in PARTS)
+    # every CSS comment must be closed — an open /* silently swallows the rules after it
+    import re as _re
+    for css in _re.findall(r'<style[^>]*>(.*?)</style>', s, _re.S):
+        assert css.count('/*') == css.count('*/'), 'unclosed CSS comment in ui-src/parts'
     for k, f in ASSETS.items():
         assert k in s, k
         s = s.replace(k, open(P('assets', f)).read().strip())
@@ -105,8 +109,37 @@ def build_pages(demo):
         _write(demo, name, s)
 
 
+def build_remote(demo):
+    """3.0 — صفحة ريموت المعلم (تشتغل على Raspberry Pi Zero 2 W)."""
+    s = open(P('remote', 'remote.html'), encoding='utf-8').read()
+    s = s.replace('/*__OSK_CSS__*/', _osk_css()).replace('/*__CORE__*/', _helpers()).replace('/*__KEYBOARD__*/', _keyboard())
+    _write(demo, 'remote.html', s)
+
+
+def build_camlink(demo):
+    """CamLink 2 — واجهة الراسبيري 4 (الكاميرا) + سكربت التجهيز الي يحتويها كلها بملف واحد."""
+    s = open(P('camlink', 'pi4.html'), encoding='utf-8').read()
+    s = s.replace('/*__OSK_CSS__*/', _osk_css()).replace('/*__CORE__*/', _helpers()).replace('/*__KEYBOARD__*/', _keyboard())
+    if demo:
+        _write(demo, 'camlink-pi4.html', s)
+        return
+    out = os.path.join(ROOT, 'shell', 'camlink', 'pi4.html')
+    open(out, 'w', encoding='utf-8').write(s)
+    print('built', out, len(s) // 1024, 'KB')
+    py = open(os.path.join(ROOT, 'shell', 'camlink', 'alharthia_camlink.py'), encoding='utf-8').read()
+    assert '\nPYEOF' not in py and '\nHTMLEOF' not in s
+    sh = open(P('camlink', 'setup.tmpl.sh'), encoding='utf-8').read()
+    sh = sh.replace('__CAMLINK_PY__\n', py).replace('__PI4_HTML__\n', s if s.endswith('\n') else s + '\n')
+    out = os.path.join(ROOT, 'tools', 'camlink-pi4-setup.sh')
+    with open(out, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(sh)
+    print('built', out, len(sh) // 1024, 'KB')
+
+
 if __name__ == '__main__':
     build('--demo' in sys.argv)
     build_osk('--demo' in sys.argv)
     build_inject('--demo' in sys.argv)
     build_pages('--demo' in sys.argv)
+    build_remote('--demo' in sys.argv)
+    build_camlink('--demo' in sys.argv)

@@ -152,12 +152,15 @@ const Attend={
     const left=pool.length-1;
     const resetBtn={label:icon('undo')+'Reset — تصفير',val:'reset',cls:'ghost'};
     if(!pool.length){
+      this.last={name:all.length?'كل الطلاب انختاروا':'ماكو طلاب حاضرين',left:0,total:all.length,t:Date.now()}; window.RemoteBridge&&RemoteBridge.push();
       modal({title:'اختيار طالب عشوائي',iconName:'dice',body:`<div class="pick-name" style="font-size:30px">${all.length?'كل الطلاب انختاروا':'ماكو طلاب حاضرين'}</div><p style="text-align:center;opacity:.7">اضغط Reset حتى ترجع كل الأسماء تنختار من جديد</p>`,actions:[resetBtn,{label:'تم',val:null,cls:'primary'}]})
         .then(v=>{ if(v==='reset') this.pickReset(true); });
       return;
     }
     const chosen=pool[Math.floor(Math.random()*pool.length)];
     C.picked.push(chosen.id); this.persist();
+    this.last={name:chosen.name,left,total:all.length,t:Date.now()}; window.RemoteBridge&&RemoteBridge.push();
+    if(window.Usage) Usage.hit('pick');
     modal({title:'اختيار طالب عشوائي',iconName:'dice',body:`<div class="pick-name" id="pkN">…</div><p id="pkL" style="text-align:center;opacity:.7;margin:0">باقي ${nf(left)} من ${nf(all.length)}</p>`,
       actions:[resetBtn,{label:'مرة ثانية',val:'again',cls:'ghost'},{label:'تم',val:null,cls:'primary'}],
       onOpen:ov=>{ let n=0; const el=$('#pkN',ov); const spin=()=>{ if(!el.isConnected) return; if(++n<18){ el.textContent=all[Math.floor(Math.random()*all.length)].name; setTimeout(spin,50+n*9); } else { el.textContent=chosen.name; beep(1,880); } }; spin(); }

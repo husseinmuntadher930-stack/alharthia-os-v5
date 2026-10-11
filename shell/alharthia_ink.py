@@ -245,7 +245,36 @@ class InkCore:
         i = len(st) - 1
         while i > 0 and st[i - 1][2] >= cut:
             i -= 1
-        return st[max(0, i - 1):]
+        out = st[max(0, i - 1):]
+        pr = self.predict(now) if not self.ended else None
+        return out + [pr] if pr else out
+
+    def predict(self, now):
+        """توقّع: نمد الخط شوية لقدّام بنفس سرعة واتجاه الإصبع (يغطي تأخير الشاشات البطيئة)."""
+        ms = max(0, min(80, self.state.get("pred") or 0)) / 1000.0
+        st = self.stroke
+        if not ms or not st or len(st) < 3:
+            return None
+        lx, ly, lt = st[-1]
+        if now - lt > 0.035:                      # الإصبع وقف — لا نتوقع شي
+            return None
+        j = len(st) - 1
+        while j > 0 and lt - st[j - 1][2] <= 0.045:
+            j -= 1
+        ox, oy, ot = st[j]
+        dt = lt - ot
+        if dt < 0.008:
+            return None
+        vx, vy = (lx - ox) / dt, (ly - oy) / dt
+        k = ms + (now - lt)                       # الوقت من آخر نقطة + مدة التوقّع
+        dx, dy = vx * k, vy * k
+        d = (dx * dx + dy * dy) ** 0.5
+        cap = 0.05                                # حد أعلى ~٥٪ من عرض الشاشة
+        if d > cap:
+            dx, dy = dx * cap / d, dy * cap / d
+        if d < 1e-4:
+            return None
+        return (lx + dx, ly + dy, now)
 
 
 # ---------------------------------------------------------------- القراءة من الكيرنل
@@ -387,7 +416,7 @@ def main():
         for b in (old, box):
             if b:
                 win.queue_draw_area(int(b[0]), int(b[1]), int(b[2] - b[0]) + 2, int(b[3] - b[1]) + 2)
-        if core and core.stroke and core.ended:
+        if core and core.stroke:                  # نعيد الرسم وقت اللمس حتى التوقّع يختفي لو وقف الإصبع
             GLib.timeout_add(16, lambda: (redraw(), False)[1])
         return False
 

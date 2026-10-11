@@ -116,6 +116,7 @@ def list_cameras():
             name = "PlayStation Eye (PS3)"
         out.append({"id": by_link.get(dev, os.path.basename(usb)), "dev": dev, "name": name, "vidpid": vidpid})
     out += list_csi()
+    out += list_net()
     # نفس الاسم لكاميرتين → نرقّمهن
     cnt = {}
     for c in out:
@@ -223,7 +224,121 @@ class CsiCap:
             pass
 
 
+# ------------------------------------------------------------------ CamLink: راسبيري 4 + كاميرا الشريط عن طريق USB-C
+# 10.55.0.2 = كيبل USB-C · 10.42.0.1 = كيبل Ethernet (لمن «البث» شغّال بالراسبيري 4)
+CAMLINK_HOSTS = [h for h in os.environ.get("ALH_CAMLINK_HOSTS", "10.55.0.2,10.42.0.1").split(",") if h]
+CAMLINK_PORT = int(os.environ.get("ALH_CAMLINK_PORT", "8766"))
+_net = {"t": -99.0, "list": []}
+
+
+def list_net():
+    """الراسبيري 4 (CamLink) موصول؟ نسأله «P» ونستنى جواب — مخزّن ٨ ثواني."""
+    import socket
+    if time.monotonic() - _net["t"] < 8:
+        return [dict(c) for c in _net["list"]]
+    out = []
+    for h in CAMLINK_HOSTS:
+        try:
+            with socket.create_connection((h, CAMLINK_PORT), timeout=0.35) as s:
+                s.settimeout(0.6)
+                s.sendall(b"P")
+                if s.recv(32).startswith(b"ALHCAM1"):
+                    via = "USB-C" if h.startswith("10.55.") else "Ethernet"
+                    out.append({"id": "camlink-" + h, "dev": "net:%s:%d" % (h, CAMLINK_PORT), "vidpid": "camlink",
+                                "name": "كاميرا الراسبيري 4 (%s) · 640×480 · 120" % via})
+        except OSError:
+            pass
+    _net.update(t=time.monotonic(), list=out)
+    return [dict(c) for c in out]
+
+
+class NetCap:
+    """نفس واجهة CsiCap: يستلم صور رمادية من CamLink (JPEG خفيف أو بدون ضغط)."""
+    HDR = struct.Struct("<IdBHH")
+
+    def __init__(self, host, port):
+        self.host, self.port, self.t_try = host, port, time.monotonic()
+        self.err, self.sock = "", None
+        self.W, self.H = 640, 480
+        self._connect()
+
+    def _connect(self):
+        import socket
+        self.t_try = time.monotonic()
+        try:
+            s = socket.create_connection((self.host, self.port), timeout=3)
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            s.settimeout(3)
+            s.sendall(b"S")
+            self.sock = s
+        except OSError as e:
+            self.err = "ما وصلت للراسبيري 4: %s" % e
+
+    def isOpened(self):
+        return self.sock is not None
+
+    def set(self, *a):
+        return False
+
+    def _read(self, n):
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = self.sock.recv(n - len(buf))
+            if not chunk:
+                raise OSError("انقطع الاتصال")
+            buf += chunk
+        return bytes(buf)
+
+    def read(self):
+        if self.sock is None:                       # انقطع (البث انطفى أو الراسبيري 4 رجع يشتغل) → نعيد الاتصال
+            if time.monotonic() - self.t_try < 1.5:
+                time.sleep(0.3)
+                return False, None
+            self._connect()
+            if self.sock is None:
+                return False, None
+        try:
+            n, _ts, codec, w, h = self.HDR.unpack(self._read(self.HDR.size))
+            data = self._read(n)
+        except (OSError, struct.error, AttributeError):
+            self.release()
+            self.sock = None
+            return False, None
+        if codec == 1:
+            g = np.frombuffer(data, np.uint8).reshape(h, w)
+        else:
+            g = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+            if g is None:
+                return False, None
+        self.W, self.H = g.shape[1], g.shape[0]
+        return True, g
+
+    def gray(self, g):
+        return g
+
+    def bgr(self, g):
+        # الكاميرا تلتقط 16:9 وتنضغط بـ640×480 — نرجّعها لشكلها الصحيح بالمعاينة
+        return cv2.cvtColor(cv2.resize(g, (round(self.H * 16 / 9), self.H)), cv2.COLOR_GRAY2BGR)
+
+    def native(self):
+        return (self.W, self.H)
+
+    def release(self):
+        try:
+            self.sock.close()
+        except Exception:  # noqa
+            pass
+
+
 # ------------------------------------------------------------------ المحرّك
+def find_cam(cams, cid):
+    """الكاميرا المختارة. كاميرا الراسبيري 4 وحدة سواء انربطت بـ USB-C أو Ethernet."""
+    c = next((c for c in cams if c["id"] == cid), None)
+    if c is None and cid and str(cid).startswith("camlink-"):
+        c = next((c for c in cams if c["id"].startswith("camlink-")), None)
+    return c
+
+
 class CamAssist:
     def __init__(self):
         self.lock = threading.Lock()
@@ -280,7 +395,7 @@ class CamAssist:
 
     def status(self):
         cams = list_cameras()
-        cur = next((c for c in cams if c["id"] == self.cfg.get("id")), None)
+        cur = find_cam(cams, self.cfg.get("id"))
         return {"cv": HAVE_CV, "cams": cams, "enabled": bool(self.cfg.get("enabled")), "id": self.cfg.get("id"),
                 "connected": bool(cur), "name": cur["name"] if cur else None, "running": self.running,
                 "fps": round(self.fps, 1), "size": list(self.size), "calibrated": self.H is not None,
@@ -313,7 +428,7 @@ class CamAssist:
         if not HAVE_CV:
             self.err = "OpenCV مو مثبتة"
             return
-        cam = next((c for c in list_cameras() if c["id"] == self.cfg.get("id")), None)
+        cam = find_cam(list_cameras(), self.cfg.get("id"))
         if not cam:
             self.err = "الكاميرا مو موصولة"
             return
@@ -332,6 +447,9 @@ class CamAssist:
     def _open(self, dev, vidpid=""):
         if dev.startswith("csi:"):
             return CsiCap(int(dev[4:] or 0))
+        if dev.startswith("net:"):
+            _, host, port = dev.split(":")
+            return NetCap(host, int(port))
         cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
         if not cap.isOpened():
             cap = cv2.VideoCapture(int(re.sub(r"\D", "", dev) or 0))
@@ -363,6 +481,8 @@ class CamAssist:
                     self.err = "الكاميرا وقفت"
                     time.sleep(0.2)
                     continue
+                if self.err:
+                    self.err = ""
                 now = time.monotonic()
                 if csi:
                     g = cap.gray(fr)
@@ -558,6 +678,21 @@ def engine():
         if ENGINE.cfg.get("enabled"):
             ENGINE.restart()
     return ENGINE
+
+
+def motion_level():
+    """3.0 — «الكاميرا الثانية تراقب الصبورة»: نسبة الحركة (0..100) بين آخر صورتين.
+    الواجهة تسأل كل كم ثانية؛ إذا أكو حركة (أحد واكف يكتب) ما تقفل الشاشة عليه."""
+    e = engine()
+    e.want_preview = time.monotonic()      # يبقي الكاميرا شغالة طول ما الميزة مفعّلة
+    e.ensure()
+    with e.cond:
+        a, b = e.prev, e.gray
+    if a is None or b is None or a.shape != b.shape or not HAVE_CV:
+        return None
+    small = (160, max(1, round(160 * a.shape[0] / a.shape[1])))
+    d = cv2.absdiff(cv2.resize(a, small, interpolation=cv2.INTER_AREA), cv2.resize(b, small, interpolation=cv2.INTER_AREA))
+    return round(float((d > 18).mean()) * 100, 2)
 
 
 if __name__ == "__main__":

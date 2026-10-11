@@ -66,7 +66,7 @@
     if(existing){ idx=this.page.items.findIndex(i=>i.id===existing.id); before=cloneItem(existing); this.page.items.splice(idx,1); this.redraw(); }
     const fs=existing?existing.fs*W:this.sizes.text*k, color=existing?existing.c:this.color;
     Object.assign(ed.style,{fontSize:fs+'px',color,fontFamily:UIFONT});
-    if(existing){ ed.textContent=existing.text; ed.dir=existing.dir; }
+    if(existing){ ed.textContent=existing.text; ed.dir=existing.dir; if(existing.bgc){ ed.style.background=existing.bgc; ed.style.borderRadius='10px'; } }
     this.area.appendChild(ed);
     const rtl=existing?existing.dir==='rtl':true;
     if(existing){ const bx=existing.bx*W, by=existing.by*W; ed.style.top=(by-4)+'px'; if(rtl) ed.style.right=(this.W-(bx+existing.bw*W)-8)+'px'; else ed.style.left=(bx-8)+'px'; }
@@ -90,6 +90,7 @@
       const innerL=cr.left-ar.left+8, innerR=cr.right-ar.left-8, top=cr.top-ar.top+4;
       const bx=dir==='rtl'?innerR-tw:innerL;
       after={id:before?before.id:uid(),t:'text',text,dir,fs:fs/W,c:color,bx:bx/W,by:top/W,bw:tw/W,bh:bh/W,rot:before?before.rot||0:0};
+      if(before&&before.bgc) after.bgc=before.bgc;   // 3.0: الملاحظة اللاصقة تحافظ على لونها
     }
     if(before||after){
       if(after) this.page.items.splice(idx>=0?idx:this.page.items.length,0,after);

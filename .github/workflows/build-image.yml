@@ -25,6 +25,7 @@ jobs:
           bash tools/fetch-fonts.sh || true
           rm -rf stage-alharthia/01-shell/files/app
           cp -r shell stage-alharthia/01-shell/files/app
+          cp tools/remote-zero-setup.sh stage-alharthia/01-shell/files/app/
           chmod +x stage-alharthia/prerun.sh stage-alharthia/*/*.sh stage-alharthia/01-shell/files/alharthia-session stage-alharthia/01-shell/files/alharthia-keyboard-setup
 
       - name: بناء صورة النظام

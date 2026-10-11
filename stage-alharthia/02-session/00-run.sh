@@ -23,6 +23,8 @@ install -d "${H}/.config/labwc" "${H}/.config/systemd/user/obex.service.d" "${H}
 install -m 644 files/rc.xml "${H}/.config/labwc/rc.xml"
 install -m 755 files/autostart "${H}/.config/labwc/autostart"
 install -m 644 files/environment "${H}/.config/labwc/environment"
+install -d -m 700 "${ROOTFS_DIR}/etc/NetworkManager/system-connections"
+install -m 600 files/alharthia-camlink.nmconnection "${ROOTFS_DIR}/etc/NetworkManager/system-connections/alharthia-camlink.nmconnection"
 
 # Bluetooth: receive files automatically into ~/Received (Alharthia receiver, registers OBEX Object Push with BlueZ)
 cat > "${ROOTFS_DIR}/etc/systemd/system/alharthia-btrecv.service" <<UNIT

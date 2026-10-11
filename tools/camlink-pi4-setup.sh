@@ -1,0 +1,1550 @@
+#!/bin/bash
+# =====================================================================
+# Alharthia OS — CamLink 2: يحوّل الراسبيري 4 + كاميرا الشريط (Camera Module 3 / NoIR)
+# إلى كاميرا للراسبيري 5 (640×480 · 120 صورة/ثانية) عن طريق كيبل USB-C أو Ethernet.
+#
+# جديد بـ CamLink 2: واجهة لمس تطلع لمن توصل الراسبيري 4 بشاشة (مثل صبورة الصف):
+#   معاينة الكاميرا · الواي فاي · زر «البث» (يعطي الإنترنت والصورة للراسبيري 5)
+#
+# يشتغل على الراسبيري 4 (Raspberry Pi OS 64-bit — Bookworm أو أحدث):
+#     sudo bash camlink-pi4-setup.sh
+# هذا الملف يتولد من ui-src/build.py — لا تعدله يدوياً (عدّل ui-src/camlink/setup.tmpl.sh).
+# =====================================================================
+set -e
+[ "$(id -u)" = 0 ] || { echo "شغّله بـ sudo"; exit 1; }
+U="${SUDO_USER:-}"; [ -n "$U" ] && [ "$U" != root ] || U="$(getent passwd 1000 | cut -d: -f1)"
+H="$(getent passwd "$U" | cut -d: -f6)"
+[ -d "$H" ] || { echo "ما لگيت المستخدم — شغّله بـ sudo من حسابك العادي"; exit 1; }
+
+echo "» 1/6 البرامج (الكاميرا + متصفح الواجهة + خط عربي)…"
+apt-get update || true
+apt-get install -y --no-install-recommends python3-picamera2 python3-simplejpeg || apt-get install -y python3-picamera2
+apt-get install -y --no-install-recommends network-manager dnsmasq-base iptables cage fonts-noto-core fonts-dejavu-core curl || true
+BROWSER=""
+apt-get install -y --no-install-recommends chromium-browser 2>/dev/null || apt-get install -y --no-install-recommends chromium 2>/dev/null || true
+command -v chromium >/dev/null && BROWSER="chromium"
+command -v chromium-browser >/dev/null && BROWSER="chromium-browser"
+if [ -z "$BROWSER" ]; then
+  apt-get install -y --no-install-recommends cog 2>/dev/null || true
+  command -v cog >/dev/null && BROWSER="cog"
+fi
+[ -n "$BROWSER" ] && echo "   المتصفح: $BROWSER" || echo "تحذير: ما نزل متصفح — الكاميرا تشتغل بس الواجهة ما تطلع (تأكد من الإنترنت وعيد)"
+
+echo "» 2/6 الواي فاي (العراق)…"
+command -v raspi-config >/dev/null && raspi-config nonint do_wifi_country IQ 2>/dev/null || true
+rfkill unblock wifi 2>/dev/null || true
+systemctl enable --now NetworkManager 2>/dev/null || true
+
+echo "» 3/6 برنامج البث والواجهة…"
+install -d /opt/alharthia-camlink /var/lib/alharthia-camlink
+cat > /opt/alharthia-camlink/alharthia_camlink.py <<'PYEOF'
+#!/usr/bin/env python3
+"""
+Alharthia OS — CamLink 2 (يشتغل على الراسبيري 4).
+
+الراسبيري 4 + كاميرا الشريط (Camera Module 3 / NoIR) يصير «كاميرا» للراسبيري 5:
+- الكاميرا تلتقط 640×480 على 120 صورة/ثانية (وضع الكاميرا السريع، الصورة كاملة).
+- كل صورة تنضغط ضغط خفيف (JPEG رمادي، ~٢ms) وتنرسل للراسبيري 5 (كيبل USB-C أو Ethernet).
+- ينرسل دائماً آخر صورة بس — إذا الطرف الثاني تأخر ما تتجمع صور قديمة.
+
+CamLink 2 يضيف واجهة لمس (تطلع لمن توصل الراسبيري 4 بشاشة):
+- معاينة الكاميرا حتى تضبط مكانها.
+- شبكات الواي فاي والاتصال بيها.
+- زر «البث»: يعطي الإنترنت والصورة للراسبيري 5 (عبر USB-C و Ethernet).
+
+المنافذ:
+  TCP 8766  — بث الصورة للراسبيري 5. العميل يدز بايت واحد:
+                b'P' → يرجع b'ALHCAM1 640x480\\n' ويسكّر (فحص وجود)
+                b'S' → بث: لكل صورة  <I length><d timestamp><B codec 0=jpeg 1=raw><H w><H h> + data
+  HTTP 8767 — الواجهة (بس من الجهاز نفسه أو من الراسبيري 5)
+"""
+import argparse
+import ipaddress
+import json
+import os
+import re
+import socket
+import struct
+import subprocess
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+VERSION = "2.0"
+HDR = struct.Struct("<IdBHH")
+W, H, FPS = 640, 480, 120
+HERE = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.environ.get("ALH_CAMLINK_STATE", "/var/lib/alharthia-camlink/state.json")
+USB_CON = "alharthia-camlink"          # منفذ USB-C (شبكة 10.55.0.x)
+ETH_CON = "alharthia-share-eth"        # منفذ Ethernet (شبكة 10.42.0.x)
+ALLOWED = [ipaddress.ip_network(n) for n in ("127.0.0.0/8", "10.55.0.0/24", "10.42.0.0/24", "::1/128")]
+FAKE = False
+
+
+def log(*a):
+    print("camlink:", *a, flush=True)
+
+
+# ===================================================================== الكاميرا
+class Camera:
+    def __init__(self, raw=False, quality=75):
+        self.raw, self.quality = raw, quality
+        self.cam = None
+        self.lock = threading.Condition()
+        self.slock = threading.Lock()
+        self.frame, self.seq = None, 0
+        self.users = 0
+        self.thread = None
+        self.running = False
+        self.err = ""
+        self.fps = 0.0
+        self.enc = self._encoder()
+        if not raw and self.enc is None:
+            self.raw = True
+
+    def _encoder(self):
+        try:
+            import simplejpeg
+            return lambda y: simplejpeg.encode_jpeg(y[:, :, None], quality=self.quality, colorspace="GRAY")
+        except Exception:  # noqa
+            try:
+                import cv2
+                return lambda y: cv2.imencode(".jpg", y, [cv2.IMWRITE_JPEG_QUALITY, self.quality])[1].tobytes()
+            except Exception:  # noqa
+                return None
+
+    def start(self):
+        if FAKE:
+            self.cam = "fake"
+        else:
+            from picamera2 import Picamera2
+            cam = Picamera2()
+            kw = dict(main={"size": (W, H), "format": "YUV420"}, buffer_count=4,
+                      controls={"FrameDurationLimits": (int(1e6 / FPS), int(1e6 / FPS))})
+            try:   # وضع الكاميرا السريع (1536×864 على 120) — الصورة كاملة بدون قص
+                cfg = cam.create_video_configuration(sensor={"output_size": (1536, 864)}, **kw)
+            except TypeError:
+                cfg = cam.create_video_configuration(**kw)
+            cam.configure(cfg)
+            cam.start()
+            try:
+                cam.set_controls({"AfMode": 2})
+            except Exception:  # noqa
+                pass
+            self.cam = cam
+        self.running = True
+        self.thread = threading.Thread(target=self.loop, daemon=True)
+        self.thread.start()
+        log("camera started")
+
+    def ensure(self):
+        with self.slock:
+            if self.running:
+                return
+            try:
+                self.start()
+                self.err = ""
+            except Exception as e:  # noqa
+                self.err = str(e)[:200] or "تعذر تشغيل الكاميرا"
+                self.running = False
+                log("camera failed:", e)
+
+    def stop(self):
+        with self.slock:
+            self.running = False
+            if self.thread:
+                self.thread.join(timeout=2)
+            if self.cam not in (None, "fake"):
+                try:
+                    self.cam.stop()
+                    self.cam.close()
+                except Exception:  # noqa
+                    pass
+            self.cam = None
+            self.fps = 0.0
+            log("camera stopped")
+
+    def _grab(self):
+        if self.cam == "fake":
+            import numpy as np
+            nxt = getattr(self, "_fnext", 0.0) + 1 / FPS          # نفس سرعة الكاميرا الحقيقية
+            time.sleep(max(0.0, nxt - time.monotonic()))
+            self._fnext = max(nxt, time.monotonic() - 0.05)
+            if not hasattr(self, "_fbase"):
+                self._fbase = np.fromfunction(lambda r, c: (r * 0.25 + c * 0.15) % 256, (H, W)).astype(np.uint8)
+            y = self._fbase.copy()
+            x = int((time.time() * 240) % (W - 80))
+            y[180:300, x:x + 80] = 250
+            y[::60, :] = 40
+            return y
+        return self.cam.capture_array("main")
+
+    def loop(self):
+        t0, n = time.monotonic(), 0
+        while self.running:
+            try:
+                a = self._grab()
+            except Exception as e:  # noqa
+                self.err = "الكاميرا وقفت: %s" % e
+                time.sleep(0.2)
+                continue
+            ts = time.time()
+            y = a[:H, :W]
+            if self.raw:
+                data, codec = y.tobytes(), 1
+            else:
+                data, codec = self.enc(y), 0
+            n += 1
+            now = time.monotonic()
+            if now - t0 >= 1:
+                self.fps, t0, n = n / (now - t0), now, 0
+            with self.lock:
+                self.frame = HDR.pack(len(data), ts, codec, W, H) + data
+                self.seq += 1
+                self.lock.notify_all()
+
+    def jpeg(self, frame):
+        """صورة JPEG للمعاينة من نفس الإطار (بدون ضغط ثاني إذا الإطار أصلاً JPEG)."""
+        n, _ts, codec, w, h = HDR.unpack_from(frame)
+        data = frame[HDR.size:HDR.size + n]
+        if codec == 0:
+            return data
+        enc = self.enc or self._encoder()
+        if enc is None:
+            return None
+        import numpy as np
+        return enc(np.frombuffer(data, np.uint8).reshape(h, w))
+
+    def acquire(self):
+        with self.lock:
+            self.users += 1
+        self.ensure()
+
+    def release(self):
+        with self.lock:
+            self.users -= 1
+            last = self.users <= 0
+        if last:
+            time.sleep(3)                          # إذا رجع بسرعة ما نطفي ونشغّل
+            with self.lock:
+                idle = self.users <= 0
+            if idle and self.running:
+                self.stop()
+
+    def wait(self, seen, timeout=2.0):
+        """ينتظر صورة أحدث من seen. يرجع (seq, frame) أو (seen, None)."""
+        with self.lock:
+            if self.seq == seen:
+                self.lock.wait(timeout=timeout)
+            if self.seq == seen:
+                return seen, None
+            return self.seq, self.frame
+
+
+# ===================================================================== الشبكة (NetworkManager)
+def nm(*args, timeout=20):
+    if FAKE:
+        return 0, ""
+    try:
+        p = subprocess.run(["nmcli", *args], capture_output=True, text=True, timeout=timeout)
+        return p.returncode, ((p.stdout or "") + (p.stderr or "")).strip()
+    except FileNotFoundError:
+        return 127, "NetworkManager مو موجود بهذا النظام"
+    except subprocess.TimeoutExpired:
+        return 124, "انتهى الوقت"
+
+
+def carrier(ifc):
+    if FAKE:
+        return ifc in FAKE_NET["links"]
+    try:
+        with open("/sys/class/net/%s/carrier" % ifc) as f:
+            return f.read().strip() == "1"
+    except OSError:
+        return False
+
+
+def _nm_get(field, con):
+    rc, out = nm("-g", field, "connection", "show", con)
+    return out.strip() if rc == 0 else None
+
+
+def apply_net(on):
+    """البث شغّال → الراسبيري 4 يشارك الإنترنت مالته عبر USB-C و Ethernet. مطفي → يرجع عادي."""
+    if FAKE:
+        return ""
+    errs = []
+    # USB-C: نفس العنوان 10.55.0.2، بس «shared» = توجيه + DNS للراسبيري 5
+    meth = _nm_get("ipv4.method", USB_CON)
+    if meth is not None:
+        want = "shared" if on else "manual"
+        if meth != want:
+            nm("connection", "modify", USB_CON, "ipv4.method", want)
+            if carrier("usb0"):
+                rc, out = nm("connection", "up", USB_CON, timeout=30)
+                if rc:
+                    errs.append("USB-C: " + out[-140:])
+    # Ethernet: الراسبيري 4 يصير 10.42.0.1 ويوزّع عنوان للراسبيري 5
+    if os.path.exists("/sys/class/net/eth0"):
+        if _nm_get("connection.id", ETH_CON) is None:
+            nm("connection", "add", "type", "ethernet", "ifname", "eth0", "con-name", ETH_CON,
+               "ipv4.method", "shared", "ipv6.method", "ignore",
+               "connection.autoconnect", "no", "connection.autoconnect-priority", "100")
+        nm("connection", "modify", ETH_CON, "connection.autoconnect", "yes" if on else "no")
+        active = _nm_get("GENERAL.STATE", ETH_CON) == "activated"
+        if on and carrier("eth0") and not active:
+            rc, out = nm("connection", "up", ETH_CON, timeout=30)
+            if rc:
+                errs.append("Ethernet: " + out[-140:])
+        elif not on and active:
+            nm("connection", "down", ETH_CON)
+    return " · ".join(errs)
+
+
+class Share:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.on = True
+        self.err = ""
+        try:
+            with open(STATE_FILE, encoding="utf-8") as f:
+                self.on = bool(json.load(f).get("cast", True))
+        except (OSError, ValueError):
+            pass
+
+    def _save(self):
+        try:
+            os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+            tmp = STATE_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"cast": self.on}, f)
+            os.replace(tmp, STATE_FILE)
+        except OSError as e:
+            log("state save failed:", e)
+
+    def set(self, on):
+        with self.lock:
+            self.on = bool(on)
+            self._save()
+            self.err = apply_net(self.on)
+        return self.on
+
+    def sync(self):
+        """عند التشغيل: نتأكد إعدادات الشبكة مطابقة لحالة الزر."""
+        time.sleep(4)
+        with self.lock:
+            self.err = apply_net(self.on)
+
+
+def _split_t(line):
+    return [x.replace("\\:", ":").replace("\\\\", "\\") for x in re.split(r"(?<!\\):", line)]
+
+
+FAKE_NET = {"links": {"usb0"}, "active": "Alharthia-School", "nets": [
+    ("Alharthia-School", 82, "WPA2"), ("Teachers-5G", 64, "WPA2 WPA3"), ("Library", 41, ""), ("Lab-2", 23, "WPA2")]}
+
+
+def wifi_list(rescan=False):
+    if FAKE:
+        return [{"ssid": s, "signal": g, "secure": bool(c), "active": s == FAKE_NET["active"]} for s, g, c in FAKE_NET["nets"]]
+    rc, out = nm("-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list",
+                 "--rescan", "yes" if rescan else "no", timeout=25)
+    nets = {}
+    for line in out.splitlines() if rc == 0 else []:
+        f = _split_t(line)
+        if len(f) < 4 or not f[1]:
+            continue
+        cur, ssid = f[0].strip() == "*", f[1]
+        try:
+            sig = int(f[2] or 0)
+        except ValueError:
+            sig = 0
+        e = nets.get(ssid)
+        if e is None:
+            nets[ssid] = e = {"ssid": ssid, "signal": sig, "secure": f[3] not in ("", "--"), "active": cur}
+        e["signal"] = max(e["signal"], sig)
+        e["active"] = e["active"] or cur
+    return sorted(nets.values(), key=lambda n: (not n["active"], -n["signal"]))
+
+
+def wifi_connect(ssid, psk):
+    if FAKE:
+        time.sleep(1.2)
+        if psk.startswith("bad"):
+            return False, "كلمة المرور غلط"
+        FAKE_NET["active"] = ssid
+        return True, ""
+    existed = _nm_get("connection.id", ssid) is not None
+    args = ["device", "wifi", "connect", ssid]
+    if psk:
+        args += ["password", psk]
+    rc, out = nm(*args, timeout=45)
+    if rc == 0:
+        nm("connection", "modify", ssid, "connection.autoconnect", "yes")
+        return True, ""
+    if not existed:
+        nm("connection", "delete", "id", ssid)
+    low = out.lower()
+    if "secrets were required" in low or "psk" in low or "password" in low:
+        msg = "كلمة المرور غلط"
+    elif "no network with ssid" in low:
+        msg = "الشبكة مو موجودة — قرّب الجهاز وحدّث القائمة"
+    elif "timeout" in low or rc == 124:
+        msg = "الشبكة ما ردّت — جرب مرة ثانية"
+    else:
+        msg = out[-160:] or "ما گدرت أتصل"
+    return False, msg
+
+
+def ips():
+    out = {}
+    if FAKE:
+        return {"wlan0": "192.168.1.44", "usb0": "10.55.0.2"}
+    try:
+        r = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True, timeout=3).stdout
+        for m in re.finditer(r"^\d+:\s+(\S+)\s+inet\s+([\d.]+)/", r, re.M):
+            if m.group(1) != "lo":
+                out[m.group(1)] = m.group(2)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return out
+
+
+# ===================================================================== حالة الجهاز
+class SysInfo:
+    def __init__(self):
+        self.internet = False
+        self.thr = 0
+        self.t_thr = -99.0
+        threading.Thread(target=self._net_loop, daemon=True).start()
+
+    def _net_loop(self):
+        while True:
+            ok = FAKE
+            for host in ("1.1.1.1", "8.8.8.8"):
+                if ok:
+                    break
+                try:
+                    with socket.create_connection((host, 53), timeout=2):
+                        ok = True
+                except OSError:
+                    pass
+            self.internet = ok
+            time.sleep(8)
+
+    def temp(self):
+        try:
+            with open("/sys/class/thermal/thermal_zone0/temp") as f:
+                return round(int(f.read()) / 1000, 1)
+        except (OSError, ValueError):
+            return 48.5 if FAKE else None
+
+    def throttled(self):
+        if time.monotonic() - self.t_thr > 10:
+            self.t_thr = time.monotonic()
+            try:
+                r = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=3).stdout
+                self.thr = int(r.split("=")[1], 16)
+            except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                self.thr = 0
+        return self.thr
+
+
+CAM = None
+SHARE = None
+SYS = None
+PREV_FPS = 0          # سرعة المعاينة الفعلية بالواجهة
+CLIENTS = {}          # بث الراسبيري 5: peer → وقت البداية
+CLOCK = threading.Lock()
+
+
+def status():
+    with CLOCK:
+        peers = sorted(CLIENTS)
+    wl = [n for n in wifi_list(False) if n["active"]]
+    thr = SYS.throttled()
+    return {
+        "version": VERSION,
+        "cast": SHARE.on, "castErr": SHARE.err,
+        "links": {"usb": carrier("usb0"), "eth": carrier("eth0")},
+        "pi5": peers,
+        "cam": {"running": CAM.running, "fps": round(CAM.fps), "preview": PREV_FPS, "err": CAM.err, "size": [W, H]},
+        "wifi": wl[0] if wl else None,
+        "internet": SYS.internet,
+        "temp": SYS.temp(),
+        "power": {"now": bool(thr & 0x1), "past": bool(thr & 0x10000)},
+        "ips": ips(),
+    }
+
+
+# ===================================================================== بث الصورة للراسبيري 5 (TCP 8766)
+def serve_client(conn, peer):
+    try:
+        conn.settimeout(5)
+        cmd = conn.recv(1)
+        if not SHARE.on:                        # البث مطفي → الراسبيري 5 ما يشوف الكاميرا
+            return
+        if cmd == b"P":
+            conn.sendall(b"ALHCAM1 %dx%d\n" % (W, H))
+            return
+        if cmd != b"S":
+            return
+        conn.settimeout(None)
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 96 * 1024)
+        with CLOCK:
+            CLIENTS[peer[0]] = time.time()
+        CAM.acquire()
+        try:
+            seen, idle = 0, 0
+            while SHARE.on:
+                seen2, frame = CAM.wait(seen)
+                if frame is None:
+                    idle += 1
+                    if idle % 3 == 0 and not CAM.running:
+                        CAM.ensure()                       # الكاميرا وقفت؟ نحاول نرجعها
+                    continue
+                idle, seen = 0, seen2
+                conn.sendall(frame)                         # دائماً آخر صورة بس
+        finally:
+            CAM.release()
+    except OSError:
+        pass
+    finally:
+        with CLOCK:
+            CLIENTS.pop(peer[0], None)
+        try:
+            conn.close()
+        except OSError:
+            pass
+
+
+def tcp_server(port):
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("0.0.0.0", port))
+    srv.listen(4)
+    log("stream on", port, "raw" if CAM.raw else "jpeg")
+    while True:
+        conn, peer = srv.accept()
+        threading.Thread(target=serve_client, args=(conn, peer), daemon=True).start()
+
+
+# ===================================================================== الواجهة (HTTP 8767)
+class UI(BaseHTTPRequestHandler):
+    server_version = "AlharthiaCamLink/" + VERSION
+
+    def log_message(self, *a):
+        pass
+
+    def _allowed(self):
+        try:
+            ip = ipaddress.ip_address(self.client_address[0])
+            return any(ip in n for n in ALLOWED if n.version == ip.version)
+        except ValueError:
+            return False
+
+    def _json(self, obj, code=200):
+        b = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(b)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(b)
+
+    def _body(self):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            return json.loads(self.rfile.read(n) or b"{}") if 0 < n < 65536 else {}
+        except (ValueError, OSError):
+            return {}
+
+    def do_GET(self):
+        if not self._allowed():
+            return self.send_error(403)
+        u = urlparse(self.path)
+        try:
+            if u.path in ("/", "/index.html"):
+                with open(os.path.join(HERE, "pi4.html"), "rb") as f:
+                    b = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(b)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(b)
+            elif u.path == "/stream.mjpg":
+                self._mjpeg()
+            elif u.path == "/snap.jpg":
+                CAM.acquire()
+                try:
+                    _s, fr = CAM.wait(CAM.seq, 3)
+                    jp = CAM.jpeg(fr) if fr else None
+                finally:
+                    threading.Thread(target=CAM.release, daemon=True).start()
+                if not jp:
+                    return self.send_error(503)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(jp)))
+                self.end_headers()
+                self.wfile.write(jp)
+            elif u.path == "/api/status":
+                self._json(status())
+            elif u.path == "/api/wifi":
+                q = parse_qs(u.query)
+                self._json({"nets": wifi_list(q.get("rescan", ["0"])[0] == "1")})
+            else:
+                self.send_error(404)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def do_POST(self):
+        if not self._allowed():
+            return self.send_error(403)
+        u = urlparse(self.path)
+        d = self._body()
+        try:
+            if u.path == "/api/cast":
+                on = SHARE.set(bool(d.get("on")))
+                self._json({"ok": True, "cast": on, "err": SHARE.err})
+            elif u.path == "/api/wifi":
+                ssid = str(d.get("ssid") or "").strip()
+                if not ssid:
+                    return self._json({"ok": False, "error": "اختار شبكة"}, 400)
+                ok, err = wifi_connect(ssid, str(d.get("psk") or ""))
+                self._json({"ok": ok, "error": err})
+            elif u.path == "/api/power":
+                a = d.get("a")
+                if a not in ("reboot", "poweroff"):
+                    return self._json({"ok": False}, 400)
+                self._json({"ok": True})
+                if not FAKE:
+                    threading.Timer(1.0, lambda: subprocess.Popen(["systemctl", a])).start()
+            else:
+                self.send_error(404)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _mjpeg(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=alhframe")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        CAM.acquire()
+        try:
+            global PREV_FPS
+            seen, t0, n = 0, time.monotonic(), 0
+            while True:
+                seen2, fr = CAM.wait(seen)
+                if fr is None:
+                    if not CAM.running:
+                        CAM.ensure()
+                    continue
+                seen = seen2
+                jp = CAM.jpeg(fr)                         # كل صورة (١٢٠/ثانية) — بدون ضغط ثاني
+                if not jp:
+                    continue
+                self.wfile.write(b"--alhframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(jp) + jp + b"\r\n")
+                n += 1
+                now = time.monotonic()
+                if now - t0 >= 1:
+                    PREV_FPS, t0, n = round(n / (now - t0)), now, 0
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            PREV_FPS = 0
+            CAM.release()
+
+
+def main():
+    global CAM, SHARE, SYS, FAKE
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8766)
+    ap.add_argument("--ui-port", type=int, default=8767)
+    ap.add_argument("--raw", action="store_true", help="بدون ضغط (يحتاج كيبل إنترنت)")
+    ap.add_argument("--quality", type=int, default=75)
+    ap.add_argument("--fake", action="store_true", help="للتجربة بدون كاميرا ولا NetworkManager")
+    a = ap.parse_args()
+    FAKE = a.fake
+    CAM = Camera(raw=a.raw, quality=a.quality)
+    SHARE = Share()
+    SYS = SysInfo()
+    threading.Thread(target=SHARE.sync, daemon=True).start()
+    threading.Thread(target=tcp_server, args=(a.port,), daemon=True).start()
+    httpd = ThreadingHTTPServer(("0.0.0.0", a.ui_port), UI)
+    httpd.daemon_threads = True
+    log("CamLink", VERSION, "ui on", a.ui_port, "cast" if SHARE.on else "cast off")
+    httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
+cat > /opt/alharthia-camlink/pi4.html <<'HTMLEOF'
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>CamLink · AlharthiaOS</title>
+<style>
+:root{--acc:#f0703e;--bg:#0a1228;--bg2:#101c3d;--card:#16254d;--card2:#1d2f5e;--line:rgba(255,255,255,.1);--text:#f1f5ff;--mut:#93a6cf;--ok:#22c55e;--bad:#ef4444;--warn:#f59e0b;--teal:#2dd4bf;
+  --font:"IBM Plex Sans Arabic","Noto Sans Arabic UI","Noto Sans Arabic","DejaVu Sans",sans-serif;--osk-h:0px;color-scheme:dark}
+html{font-size:clamp(13px,1.02vw,24px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);-webkit-user-select:none;user-select:none;touch-action:manipulation}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+input{font:inherit}
+svg.i{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+[hidden]{display:none!important}
+#osk{position:fixed;left:0;right:0;bottom:0;z-index:150;--kb-bg:#e3e6eb;--kb-key:#fff;--kb-fn:#cfd4dc;--kb-t:#1b1f27;--kb-t2:#5b6475;background:var(--kb-bg);padding:4px 8px 10px;touch-action:none;-webkit-user-select:none;user-select:none;box-shadow:0 -4px 18px rgba(0,0,0,.12);font-family:var(--font)}
+html[data-theme=dark] #osk,#osk.dk{--kb-bg:#1c1d21;--kb-key:#3a3b40;--kb-fn:#2a2b30;--kb-t:#eceef2;--kb-t2:#a3a9b6}
+.osk-s{--kh:44px;--kg:6px}.osk-m{--kh:58px;--kg:7px}.osk-l{--kh:72px;--kg:9px}
+.osk-bar{display:flex;align-items:center;gap:6px;height:46px;padding:0 2px;max-width:1400px;margin:0 auto}
+.osk-bar .grow{flex:1}
+.ob{width:46px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:22px;color:var(--kb-t2)}
+.ob:active,.ob.on{background:var(--kb-fn)}
+.osk-langs{display:flex;gap:4px}
+.ol{height:34px;padding:0 14px;border-radius:99px;font-weight:600;font-size:14px;color:var(--kb-t2)}
+.ol.on{background:var(--acc);color:#fff}
+.osk-keys{display:flex;flex-direction:column;gap:var(--kg);max-width:1400px;margin:0 auto}
+.osk-row{display:flex;gap:var(--kg);justify-content:center}
+#osk .k{flex:1 1 0;min-width:0;max-width:calc(var(--kh)*1.6);height:var(--kh);border-radius:10px;background:var(--kb-key);color:var(--kb-t);font-size:calc(var(--kh)*.42);font-weight:500;box-shadow:0 1px 0 rgba(0,0,0,.2);display:grid;place-items:center;position:relative;font-family:var(--font);padding:0}
+#osk .k svg{font-size:calc(var(--kh)*.44)}
+#osk .k.fn{background:var(--kb-fn);font-size:calc(var(--kh)*.3);font-weight:600}
+#osk .k.w15{flex-grow:1.5;max-width:calc(var(--kh)*2.4)}
+#osk .k.space{flex-grow:5.5;max-width:none;font-size:calc(var(--kh)*.26);color:var(--kb-t2)}
+#osk .k.enter{background:var(--acc);color:#fff}
+#osk .k.on{background:color-mix(in srgb,var(--acc) 30%,var(--kb-fn))}
+#osk .k.lock{background:var(--acc);color:#fff}
+#osk .k.down{background:var(--kb-fn)}
+#osk .k.has-alt::after{content:"";position:absolute;top:6px;left:7px;width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.35}
+.osk-pop{position:absolute;transform:translate(-50%,calc(-100% - 8px));min-width:60px;height:76px;padding:0 12px;border-radius:16px;background:var(--kb-key);color:var(--kb-t);box-shadow:0 8px 22px rgba(0,0,0,.28);display:grid;place-items:center;font-size:36px;pointer-events:none;z-index:2}
+.osk-alt{position:absolute;display:flex;gap:4px;padding:6px;border-radius:16px;background:var(--kb-key);box-shadow:0 10px 28px rgba(0,0,0,.32);z-index:3}
+#osk .osk-alt .k{width:var(--kh);flex:none;box-shadow:none;background:var(--kb-fn)}
+#osk .osk-alt .k.hot{background:var(--acc);color:#fff}
+.osk-emoji{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:2px;height:calc(var(--kh)*3 + var(--kg)*2 - 22px);overscroll-behavior:contain;overflow-y:auto;margin-bottom:var(--kg)}
+#osk .osk-emo-t{height:22px;font-size:12px;font-weight:600;opacity:.65;padding:0 6px;display:flex;align-items:center;gap:8px}
+#osk .osk-emo-clr{border:0;background:none;color:inherit;text-decoration:underline;font:inherit;cursor:pointer}
+#osk .osk-emo-empty{grid-column:1/-1;align-self:center;text-align:center;opacity:.6;font-size:15px}
+#osk .osk-emo-cats .k.ec{font-size:20px;background:transparent;box-shadow:none;min-width:0;padding:0;opacity:.6}
+#osk .osk-emo-cats .k.ec.on{opacity:1;background:var(--kf,rgba(128,128,128,.2))}
+#osk .osk-emoji .k.has-alt::after{content:none}
+#osk .osk-emoji .k{font-family:'Noto Color Emoji','Apple Color Emoji','Segoe UI Emoji',sans-serif;max-width:none;font-size:28px;background:transparent;box-shadow:none}
+#osk .osk-xrow{max-width:1400px;margin:0 auto var(--kg)}
+#osk .osk-xrow .k{height:calc(var(--kh)*.72);font-size:calc(var(--kh)*.26);max-width:none}
+#tbKbd.off{opacity:.45}
+.st-wifi .wf path{transition:opacity .2s}
+@media (max-width:760px){.osk-m,.osk-l{--kh:46px;--kg:5px}.ol{padding:0 8px}}
+html.lang-en{--font:"IBM Plex Sans Arabic","Segoe UI",system-ui,sans-serif}
+
+#osk{z-index:90}
+/* ---------- layout ---------- */
+#app{position:fixed;inset:0;bottom:var(--osk-h);display:grid;grid-template-rows:4rem 1fr}
+header{display:flex;align-items:center;gap:1rem;padding:0 1.4rem;background:var(--bg2);border-bottom:1px solid var(--line)}
+header .dot{width:.8rem;height:.8rem;border-radius:50%;background:var(--bad);box-shadow:0 0 .7rem var(--bad);flex:none}
+header .dot.on{background:var(--ok);box-shadow:0 0 .7rem var(--ok)}
+header .ttl{font-weight:800;font-size:1.45rem;white-space:nowrap}
+header .ttl b{color:var(--acc)}
+header .sub{color:var(--mut);font-size:1.05rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header .clk{font-weight:800;font-size:1.4rem;direction:ltr}
+main{display:grid;grid-template-columns:1fr 27rem;gap:1.2rem;padding:1.2rem;min-height:0}
+main.big{grid-template-columns:1fr}
+main.big #side{display:none}
+/* ---------- camera ---------- */
+#camCol{display:flex;flex-direction:column;gap:.9rem;min-width:0;min-height:0}
+#camBox{flex:1;min-height:0;display:grid;place-items:center}
+.cam{position:relative;width:min(100%,calc((100vh - 13rem - var(--osk-h)) * 16 / 9));aspect-ratio:16/9;background:#000;border-radius:1.2rem;overflow:hidden;box-shadow:0 1.2rem 3rem rgba(0,0,0,.45);border:1px solid var(--line)}
+.cam img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block}
+.cam svg.ov{position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none}
+.cam .msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.7rem;color:var(--mut);font-size:1.3rem;font-weight:700;text-align:center;padding:2rem;background:radial-gradient(80% 80% at 50% 40%,#13265a,#050913)}
+.cam .msg svg{font-size:3.4rem;color:var(--acc)}
+.cam .msg small{font-size:1rem;font-weight:500;max-width:36rem;direction:ltr}
+.cam .tag{position:absolute;top:.9rem;right:.9rem;z-index:3;will-change:transform;display:flex;align-items:center;gap:.5rem;padding:.35rem .9rem;border-radius:999px;background:rgba(0,0,0,.66);color:#fff;font-weight:800;font-size:1rem}
+.cam .tag i{width:.6rem;height:.6rem;border-radius:50%;background:var(--bad);display:block}
+.cam .tag.live i{background:#ef4444;box-shadow:0 0 .6rem #ef4444;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+.camBar{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:.45rem;padding:.55rem 1rem;border-radius:999px;background:var(--card);border:1px solid var(--line);font-weight:700;font-size:1rem;white-space:nowrap}
+.chip svg{font-size:1.2rem}
+.chip.ok{color:#bbf7d0;border-color:rgba(34,197,94,.35)}
+.chip.bad{color:#fecaca;border-color:rgba(239,68,68,.35)}
+.chip.warn{color:#fde68a;border-color:rgba(245,158,11,.4)}
+.grow{flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.2rem;border-radius:.9rem;background:var(--card);font-weight:700;font-size:1.05rem;border:1px solid var(--line);white-space:nowrap}
+.btn:active{background:var(--card2);transform:scale(.97)}
+.btn.on{border-color:var(--acc);color:#ffd7c4}
+.btn.pri{background:var(--acc);border:0;color:#fff}
+.btn.red{background:#7f1d1d;border-color:#b91c1c}
+.btn svg{font-size:1.3rem}
+.btn[disabled]{opacity:.5;pointer-events:none}
+/* ---------- side ---------- */
+#side{display:flex;flex-direction:column;gap:1rem;min-height:0;overflow:auto;padding-bottom:.4rem}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:1.2rem;padding:.9rem 1.1rem}
+.card h3{margin:0 0 .65rem;font-size:1.2rem;display:flex;align-items:center;gap:.6rem}
+.card h3 svg{font-size:1.4rem;color:var(--acc)}
+.card h3 .btn{margin-inline-start:auto;padding:.45rem .8rem;font-size:.95rem}
+/* cast */
+#cast{display:flex;align-items:center;gap:1.1rem;width:100%;padding:.8rem 1rem;border-radius:1.1rem;background:var(--card);border:2px solid var(--line);text-align:right}
+#cast .knob{width:4.4rem;height:4.4rem;border-radius:50%;display:grid;place-items:center;background:#24324f;flex:none;transition:.25s}
+#cast .knob svg{font-size:2.2rem}
+#cast b{display:block;font-size:1.45rem;font-weight:900}
+#cast small{display:block;color:var(--mut);font-size:.95rem;margin-top:.2rem;line-height:1.45}
+#cast.on{border-color:rgba(240,112,62,.7);background:linear-gradient(160deg,#3b1d14,#1d2340)}
+#cast.on .knob{background:linear-gradient(160deg,#ff8a4c,#e2582a);box-shadow:0 0 0 .5rem rgba(240,112,62,.18),0 0 2rem rgba(240,112,62,.5)}
+#cast:active{transform:scale(.985)}
+#cast.busy{opacity:.6;pointer-events:none}
+.lines{display:flex;flex-direction:column;gap:.45rem;margin-top:.75rem}
+.ln{display:flex;align-items:flex-start;gap:.7rem;font-size:1rem;line-height:1.45}
+.ln .ic{width:2.1rem;height:2.1rem;border-radius:.6rem;display:grid;place-items:center;background:var(--card);flex:none}
+.ln .ic svg{font-size:1.15rem}
+.ln b{display:block;font-size:1rem}
+.ln span{color:var(--mut);font-size:.92rem}
+.ln.ok .ic{background:rgba(34,197,94,.16);color:#86efac}
+.ln.bad .ic{background:rgba(239,68,68,.14);color:#fca5a5}
+.ln.warn .ic{background:rgba(245,158,11,.15);color:#fcd34d}
+.links{display:flex;gap:.5rem;margin-top:.65rem;flex-wrap:wrap}
+.links .chip{padding:.4rem .9rem;font-size:.95rem}
+.cerr{margin-top:.6rem;color:#fca5a5;font-size:.9rem;direction:ltr;text-align:left;word-break:break-word}
+/* wifi */
+.cur{display:flex;align-items:center;gap:.8rem;padding:.7rem 1rem;border-radius:1rem;background:var(--card);border:1px solid rgba(34,197,94,.3);margin-bottom:.55rem}
+.cur .nm{flex:1;min-width:0;font-weight:800;font-size:1.1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cur small{display:block;color:var(--mut);font-weight:600;font-size:.88rem}
+.nets{display:flex;flex-direction:column;gap:.4rem;max-height:10.8rem;overflow:auto}
+.net{display:flex;align-items:center;gap:.8rem;padding:.65rem .9rem;border-radius:.9rem;background:var(--card);border:1px solid var(--line);font-weight:700;font-size:1.05rem;text-align:right;width:100%}
+.net:active{background:var(--card2)}
+.net .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net .on{font-size:.85rem;color:#86efac;font-weight:800}
+.net svg.lk{font-size:1rem;color:var(--mut)}
+.bars{display:flex;align-items:flex-end;gap:.15rem;height:1.2rem;direction:ltr;flex:none}
+.bars i{width:.3rem;border-radius:.1rem;background:rgba(255,255,255,.18)}
+.bars i:nth-child(1){height:30%}.bars i:nth-child(2){height:55%}.bars i:nth-child(3){height:78%}.bars i:nth-child(4){height:100%}
+.bars i.f{background:var(--teal)}
+.empty{text-align:center;color:var(--mut);padding:1.2rem .5rem;font-size:1rem}
+/* system */
+.kv{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:.4rem .8rem;font-size:.95rem;margin:0 0 .75rem}
+.kv dt{color:var(--mut)}
+.kv dd{margin:0;font-weight:700;direction:ltr;text-align:left}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+/* ---------- overlays ---------- */
+.ov{position:fixed;inset:0;bottom:var(--osk-h);background:rgba(4,8,20,.86);display:flex;align-items:center;justify-content:center;z-index:40;padding:1.4rem}
+.box{background:var(--bg2);border:1px solid var(--line);border-radius:1.5rem;padding:1.6rem 1.8rem;width:min(36rem,100%);max-height:100%;overflow:auto;box-shadow:0 2rem 5rem rgba(0,0,0,.5)}
+.box h2{margin:0 0 .4rem;font-size:1.6rem}
+.box p{margin:0 0 1rem;color:var(--mut);font-size:1.05rem;line-height:1.6}
+.field{width:100%;height:3.6rem;border-radius:1rem;border:1px solid var(--line);background:#0b1636;color:var(--text);padding:0 1.1rem;font-size:1.3rem;outline:none;direction:ltr}
+.field:focus{border-color:var(--acc)}
+.pwrow{display:flex;gap:.6rem;align-items:center}
+.pwrow .btn{height:3.6rem}
+.err{color:#fca5a5;font-weight:700;min-height:1.6rem;margin:.6rem 0 0}
+.btns{display:flex;gap:.7rem;justify-content:flex-end;margin-top:1rem}
+.spin{width:1.3rem;height:1.3rem;border-radius:50%;border:.2rem solid rgba(255,255,255,.25);border-top-color:#fff;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+#toast{position:fixed;left:50%;top:5rem;transform:translateX(-50%);background:#0b1636;border:1px solid var(--line);padding:.8rem 1.5rem;border-radius:999px;font-weight:700;font-size:1.1rem;z-index:95;box-shadow:0 1rem 2rem rgba(0,0,0,.4);white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><span class="dot" id="dot"></span><span class="ttl">Alharthia<b>OS</b> · CamLink</span>
+    <span class="sub" id="sub">كاميرا الراسبيري 4</span><span class="clk" id="clk"></span></header>
+  <main id="main">
+    <section id="camCol">
+      <div id="camBox">
+        <div class="cam" id="cam">
+          <img id="img" alt="">
+          <svg class="ov" id="guides" viewBox="0 0 160 90" preserveAspectRatio="none">
+            <g stroke="rgba(255,255,255,.55)" stroke-width=".25" stroke-dasharray="1.2 1.2" fill="none">
+              <path d="M53.3 0V90M106.7 0V90M0 30H160M0 60H160"/>
+            </g>
+            <g stroke="#f0703e" stroke-width=".45" fill="none">
+              <path d="M80 39V51M74 45H86"/><circle cx="80" cy="45" r="2.6"/>
+              <path d="M4 10V4H10M150 4H156V10M156 80V86H150M10 86H4V80"/>
+            </g>
+          </svg>
+          <div class="msg" id="camMsg"><svg class="i" data-i="video"></svg><span id="camMsgT">جاري تشغيل الكاميرا…</span><small id="camMsgE"></small></div>
+          <div class="tag" id="tag"><i></i><span>معاينة</span></div>
+        </div>
+      </div>
+      <div class="camBar">
+        <span class="chip" id="cFps"><svg class="i" data-i="video"></svg><span>—</span></span>
+        <span class="chip" id="cPi5"><svg class="i" data-i="monitor"></svg><span>—</span></span>
+        <span class="grow"></span>
+        <button class="btn on" id="bGuides"><svg class="i" data-i="grid"></svg>خطوط المساعدة</button>
+        <button class="btn" id="bBig"><svg class="i" data-i="fit"></svg><span>تكبير</span></button>
+      </div>
+    </section>
+    <aside id="side">
+      <div class="card">
+        <h3><svg class="i" data-i="cast"></svg>البث للصبورة</h3>
+        <button id="cast"><span class="knob"><svg class="i" data-i="cast"></svg></span>
+          <span><b id="castT">…</b><small id="castS">يعطي الإنترنت والصورة للراسبيري 5</small></span></button>
+        <div class="lines">
+          <div class="ln" id="lImg"><span class="ic"><svg class="i" data-i="image"></svg></span><div><b>الصورة</b><span>—</span></div></div>
+          <div class="ln" id="lNet"><span class="ic"><svg class="i" data-i="globe"></svg></span><div><b>الإنترنت</b><span>—</span></div></div>
+        </div>
+        <div class="links"><span class="chip" id="kUsb"><svg class="i" data-i="usb"></svg>USB-C</span><span class="chip" id="kEth"><svg class="i" data-i="ether"></svg>Ethernet</span></div>
+        <div class="cerr" id="castErr" hidden></div>
+      </div>
+      <div class="card">
+        <h3><svg class="i" data-i="wifi"></svg>الواي فاي<button class="btn" id="bScan"><svg class="i" data-i="restart"></svg>تحديث</button></h3>
+        <div class="cur" id="wCur"></div>
+        <div class="nets" id="wList"><div class="empty">جاري البحث…</div></div>
+      </div>
+      <div class="card">
+        <h3><svg class="i" data-i="chip"></svg>الجهاز<button class="btn" id="bReboot" title="إعادة تشغيل"><svg class="i" data-i="restart"></svg>تشغيل من جديد</button><button class="btn red" id="bOff" style="margin-inline-start:0" title="إطفاء"><svg class="i" data-i="power"></svg>إطفاء</button></h3>
+        <dl class="kv" id="kv" style="margin:0"></dl>
+      </div>
+    </aside>
+  </main>
+</div>
+<div id="toast" hidden></div>
+<script>
+"use strict";
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ICONS={
+users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+attend:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/>',
+dice:'<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2" fill="currentColor"/><circle cx="15" cy="15" r="1.2" fill="currentColor"/><circle cx="15" cy="9" r="1.2" fill="currentColor"/><circle cx="9" cy="15" r="1.2" fill="currentColor"/>',
+home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h5v-6h4v6h5V9.5"/>',
+apps:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+store:'<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+board:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/><path d="m7 12 3-3 2 2 4-4"/>',
+pdf:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+doc:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+word:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="m8 12 1.5 6 2.5-5 2.5 5 1.5-6"/>',
+table:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
+slides:'<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M12 16v3m-4 2 4-2 4 2"/><path d="M8 12v-2m4 2V8m4 4v-3"/>',
+folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+folderPlus:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>',
+globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+timer:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>',
+gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+pen:'<path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="m13.5 6.5 4 4"/>',
+fountain:'<path d="M12 21 7.5 12 12 3l4.5 9z"/><path d="M12 3v8"/><circle cx="12" cy="13" r="1.3"/><path d="M8 21h8"/>',
+nib:'<path d="M4 20c3-1 5-3 6-6l6-9 3 3-9 6c-3 1-5 3-6 6z"/><path d="m14 7 3 3"/>',
+marker:'<path d="m9 11-5 5v4h4l5-5"/><path d="m9 11 6-6 4 4-6 6z"/><path d="M15 20h6"/>',
+laser:'<circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
+eraser:'<path d="m7 21-4-4a1.5 1.5 0 0 1 0-2L13 5a1.5 1.5 0 0 1 2 0l5 5a1.5 1.5 0 0 1 0 2l-9 9"/><path d="M7 21h14"/><path d="m8.5 9.5 6 6"/>',
+objErase:'<path d="m7 21-4-4a1.5 1.5 0 0 1 0-2L13 5a1.5 1.5 0 0 1 2 0l5 5a1.5 1.5 0 0 1 0 2l-9 9"/><path d="M7 21h14"/><path d="m14 14 6 6M20 14l-6 6" stroke-width="1.8"/>',
+cursor:'<path d="M5 3l6.5 17 2.3-7.2L21 10.5z"/>',
+textT:'<path d="M5 6V4h14v2M12 4v16M9 20h6"/>',
+shapes:'<rect x="3" y="12" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/>',
+line:'<path d="M5 19 19 5"/>',
+dline:'<path d="M5 19l2.5-2.5M10 14l2.5-2.5M15 9l2.5-2.5"/>',
+arrow:'<path d="M5 19 19 5M10 5h9v9"/>',
+darrow:'<path d="M5 19 19 5M13 5h6v6M11 19H5v-6"/>',
+rect:'<rect x="4" y="6" width="16" height="12" rx="1"/>',
+ellipse:'<ellipse cx="12" cy="12" rx="9" ry="6.5"/>',
+circle:'<circle cx="12" cy="12" r="8.5"/>',
+triangle:'<path d="M12 4 21 20H3z"/>',
+rtri:'<path d="M5 4v16h15z"/>',
+diamond:'<path d="m12 3 9 9-9 9-9-9z"/>',
+pentagon:'<path d="m12 3 9 6.5-3.5 11h-11L3 9.5z"/>',
+hexagon:'<path d="M7.5 4h9l4.5 8-4.5 8h-9L3 12z"/>',
+star:'<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+fill:'<path d="m5 11 7-7 7 7-7 7z" fill="currentColor" fill-opacity=".25"/><path d="M20 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z"/>',
+setsq:'<path d="M4 20V4l16 16z"/><path d="M8 16v-4l4 4z"/>',
+setsq30:'<path d="M4 20V9l16 11z"/><path d="M7 17v-2.5l3.5 2.5z"/>',
+ruler:'<path d="M3 16.5 16.5 3 21 7.5 7.5 21z"/><path d="m7.5 12 2 2M10.5 9l1.5 1.5M13.5 6l2 2"/>',
+protractor:'<path d="M3 18a9 9 0 0 1 18 0z"/><path d="M12 18 16.5 11.5"/><path d="M7.5 18a4.5 4.5 0 0 1 9 0"/>',
+compass:'<circle cx="12" cy="4" r="1.6"/><path d="M11.2 5.5 6 21M12.8 5.5 18 21M8.5 13.5h7"/>',
+axes:'<path d="M3 12h18M12 3v18"/><path d="m19 10 2 2-2 2M10 5l2-2 2 2"/><path d="M7 11v2M17 11v2M11 7h2M11 17h2"/>',
+straight:'<path d="M5 19 19 5"/><circle cx="5" cy="19" r="2.2" fill="currentColor"/><circle cx="19" cy="5" r="2.2" fill="currentColor"/>',
+eyedrop:'<path d="m13 7 4 4"/><path d="M4 20l1.2-4.2 8.3-8.3 3 3-8.3 8.3z"/><path d="M14.5 5.5 16 4a2.1 2.1 0 0 1 3 3l-1.5 1.5"/>',
+palette:'<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-1.4-1-1.7-1-3 0-1 .8-2 2-2h2a4 4 0 0 0 4-4c0-4-4-7-9-7z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
+undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+redo:'<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+grid:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+chevR:'<path d="m9 6 6 6-6 6"/>', chevL:'<path d="m15 6-6 6 6 6"/>',
+chevUp:'<path d="m6 15 6-6 6 6"/>', chevDown:'<path d="m6 9 6 6 6-6"/>',
+plus:'<path d="M12 5v14M5 12h14"/>', minus:'<path d="M5 12h14"/>',
+download:'<path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 21h14"/>',
+upload:'<path d="M12 16V4m-5 5 5-5 5 5"/><path d="M5 20h14"/>',
+save:'<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>',
+wifi:'<path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><path d="M12 19h.01" stroke-width="3"/>',
+wifiOff:'<path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0" opacity=".35"/><path d="M3 3l18 18"/>',
+bluetooth:'<path d="m7 7 10 10-5 5V2l5 5L7 17"/>',
+vol:'<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+usb:'<path d="M12 2v15"/><circle cx="12" cy="19" r="2"/><path d="m10 5 2-3 2 3"/><path d="M12 14 8 12V9M12 12l4-2V8"/><circle cx="8" cy="8" r="1"/><path d="M15 6h2v2h-2z"/>',
+power:'<path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>',
+move:'<path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+zoomIn:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M11 8v6M8 11h6"/>',
+zoomOut:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
+fit:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+exitFull:'<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+fitW:'<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>',
+sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+moon:'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+autoTheme:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor"/>',
+lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+restart:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+play:'<path d="M8 5v14l11-7z" fill="currentColor"/>',
+pause:'<path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor"/>',
+sidebar:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+eject:'<path d="M5 14h14L12 6z"/><path d="M5 18h14"/>',
+search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+check:'<path d="m5 12 5 5 9-10"/>',
+x:'<path d="M6 6l12 12M18 6 6 18"/>',
+info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+monitor:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+hdd:'<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M5 13 7.5 5h9L19 13"/><path d="M7 16.5h.01M11 16.5h.01"/>',
+chip:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+phone:'<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+laptop:'<rect x="4" y="5" width="16" height="11" rx="1"/><path d="M2 19h20"/>',
+speaker:'<rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="14" r="3"/><path d="M12 7h.01"/>',
+headphones:'<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/>',
+inbox:'<path d="M4 13h4l2 3h4l2-3h4"/><path d="M5 5h14l1 8v6H4v-6z"/>',
+up:'<path d="M12 19V5M6 11l6-6 6 6"/>',
+pages:'<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+music:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+video:'<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
+zip:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M11 4v2M11 8v2M11 12v2"/><rect x="10" y="15" width="2.5" height="3"/>',
+clean:'<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/><path d="M19 15l.8 1.7 1.7.8-1.7.8L19 20l-.8-1.7-1.7-.8 1.7-.8z"/>',
+shield:'<path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+thermo:'<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/>',
+format:'<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M5 13 7.5 5h9L19 13"/><path d="M9 9l6 0" /><path d="M16 17h2"/>',
+dots:'<circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/>',
+star2:'<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor"/>',
+};
+const icon=(n,a='')=>`<svg class="i" viewBox="0 0 24 24" ${a}>${ICONS[n]||''}</svg>`;
+function paintIcons(root=document){ for(const el of root.querySelectorAll('svg[data-i]')){ el.setAttribute('viewBox','0 0 24 24'); el.innerHTML=ICONS[el.dataset.i]||''; el.removeAttribute('data-i'); } }
+const AR_D='٠١٢٣٤٥٦٧٨٩';
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+ICONS.cast='<path d="M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4"/><circle cx="12" cy="12" r="2"/>';
+ICONS.ether='<rect x="4" y="4" width="16" height="13" rx="2"/><path d="M8 17v3h8v-3M8 8v3M11 8v3M14 8v3M17 8v3"/>';
+ICONS.lockS=ICONS.lock||'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
+ICONS.eye='<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>';
+window.OSK_NOSET=1;
+const S={kbdLangs:['en','ar'],kbdLang:'en',oskMode:'auto',oskSize:'m',oskPreview:false,oskTermKeys:false,ar:false,clickSound:false,emojiRecent:[]};
+function save(){} function go(){}
+const nf=v=>String(v).replace(/\d/g,d=>AR_D[d]);
+function toast(t){ const el=$('#toast'); el.textContent=t; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,2600); }
+</script>
+<script>
+"use strict";
+
+/* =====================================================================
+   ON-SCREEN KEYBOARD (Gboard style) — Arabic / English / French
+   يطلع تلقائياً عند لمس أي خانة كتابة داخل الواجهة
+   ===================================================================== */
+const OSK_LANGS={
+  ar:{n:'العربية',short:'ع',dir:'rtl',rows:[
+    ['ض','ص','ث','ق','ف','غ','ع','ه','خ','ح','ج'],
+    ['ش','س','ي','ب','ل','ا','ت','ن','م','ك','ط'],
+    ['#shift','ذ','ئ','ء','ؤ','ر','ى','ة','و','ز','ظ','د','#back'],
+    ['#sym','#lang',{k:'،',alt:['،','؟','!','؛',',']},'#space',{k:'.',alt:['.','…','-','«','»']},'#enter']],
+    long:{'ا':['أ','إ','آ','ٱ'],'ي':['ئ','ى','ی'],'و':['ؤ'],'ه':['ة','ۀ'],'ل':['لا','لأ','لإ','لآ'],'ك':['گ','ک'],'ف':['ڤ'],'ج':['چ'],'ب':['پ'],'ز':['ژ'],'ت':['ة'],'ء':['ئ','ؤ','أ','إ'],'د':['ذ'],'ر':['ز'],'ع':['غ'],'ح':['خ','ج'],'ص':['ض'],'س':['ش'],'ط':['ظ']},
+    shift:{'ض':'َ','ص':'ً','ث':'ُ','ق':'ٌ','ف':'ِ','غ':'ٍ','ع':'ْ','ه':'ّ','خ':'ـ','ح':'«','ج':'»','ش':'أ','س':'إ','ي':'آ','ب':'ٱ','ل':'لا','ا':'لأ','ت':'لإ','ن':'لآ','م':'(','ك':')','ط':'؛','ذ':'ٰ','ئ':'!','ء':'؟','ؤ':':','ر':'"','ى':'\'','ة':'-','و':'_','ز':'/','ظ':'\\','د':'*'}},
+  en:{n:'English',short:'EN',dir:'ltr',rows:[
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l'],
+    ['#shift','z','x','c','v','b','n','m','#back'],
+    ['#sym','#lang',{k:',',alt:[',','!','?',';',':']},'#space',{k:'.',alt:['.','…','-','\'','"']},'#enter']],
+    long:{'a':['à','á','â','ä','æ'],'e':['è','é','ê','ë'],'i':['ì','í','î','ï'],'o':['ò','ó','ô','ö','œ'],'u':['ù','ú','û','ü'],'c':['ç'],'n':['ñ'],'s':['ß','$'],'y':['ÿ']}},
+  fr:{n:'Français',short:'FR',dir:'ltr',rows:[
+    ['a','z','e','r','t','y','u','i','o','p'],
+    ['q','s','d','f','g','h','j','k','l','m'],
+    ['#shift','w','x','c','v','b','n',{k:'\'',alt:['\'','’','«','»']},'#back'],
+    ['#sym','#lang',{k:',',alt:[',','!','?',';',':']},'#space',{k:'.',alt:['.','…','-','«','»']},'#enter']],
+    long:{'e':['é','è','ê','ë','€'],'a':['à','â','æ','ä'],'u':['ù','û','ü'],'i':['î','ï'],'o':['ô','œ','ö'],'c':['ç'],'y':['ÿ'],'n':['ñ']}}
+};
+const OSK_SYM1=[['1','2','3','4','5','6','7','8','9','0'],['@','#','$','_','&','-','+','(',')','/'],['#sym2','*','"','\'',':',';','!','?','#back'],['#abc','#lang',',','#space','.','#enter']];
+const OSK_SYM2=[['~','`','|','•','√','π','÷','×','¶','∆'],['£','€','¥','^','°','=','{','}','\\','%'],['#sym1','©','®','™','✓','[',']','<','>','#back'],['#abc','#lang','<','#space','>','#enter']];
+const OSK_EMOJI_CATS=[
+  {id:'recent',n:'الأخيرة',i:'🕘',e:[]},
+  {id:'smile',n:'وجوه',i:'😀',e:'😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 😮‍💨 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 🥸 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖 😺 😸 😹 😻 😼 😽 🙀 😿 😾 🙈 🙉 🙊'.split(' ')},
+  {id:'people',n:'أشخاص وأيدي',i:'👋',e:'👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦵 🦶 👂 👃 🧠 👀 👁️ 👅 👄 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 🧑‍🎓 👨‍🎓 👩‍🎓 🧑‍🏫 👨‍🏫 👩‍🏫 🧑‍⚕️ 🧑‍🔬 🧑‍💻 🧑‍🎨 🧑‍🚀 🧑‍🍳 👮 💂 👷 🤴 👸 🦸 🦹 🧙 🧚 🧞 🚶 🏃 🧍 🧎 👪 🗣️ 👤 👥'.split(' ')},
+  {id:'nature',n:'حيوانات وطبيعة',i:'🐱',e:'🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🕷️ 🦂 🐢 🐍 🦎 🦖 🦕 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦛 🦏 🐪 🐫 🦒 🦘 🐃 🐂 🐄 🐎 🐖 🐏 🐑 🐐 🦌 🐕 🐈 🐓 🦃 🦚 🦜 🕊️ 🐇 🦔 🌵 🎄 🌲 🌳 🌴 🌱 🌿 ☘️ 🍀 🍃 🍂 🍁 🍄 🌾 💐 🌷 🌹 🥀 🌺 🌸 🌼 🌻 🌞 🌝 🌛 🌙 🌎 🌍 🌏 🪐 💫 ⭐ 🌟 ✨ ⚡ ☄️ 🔥 🌈 ☀️ 🌤️ ⛅ ☁️ 🌧️ ⛈️ 🌩️ ❄️ ☃️ ⛄ 🌬️ 💨 💧 💦 ☔ 🌊'.split(' ')},
+  {id:'food',n:'طعام',i:'🍔',e:'🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶️ 🌽 🥕 🧄 🧅 🥔 🍠 🥐 🥯 🍞 🥖 🧀 🥚 🍳 🥞 🧇 🥓 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🥙 🧆 🌮 🌯 🥗 🥘 🍝 🍜 🍲 🍛 🍣 🍱 🥟 🍤 🍙 🍚 🍘 🍥 🥠 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🍩 🍪 🌰 🥜 🍯 🥛 🍼 ☕ 🍵 🧃 🥤 🧋 🧊 🥄 🍴 🍽️'.split(' ')},
+  {id:'activity',n:'أنشطة',i:'⚽',e:'⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🏓 🏸 🏒 🏑 🥍 🏏 🥅 ⛳ 🏹 🎣 🥊 🥋 🎽 🛹 🛼 ⛸️ 🥌 🎿 ⛷️ 🏂 🏋️ 🤸 ⛹️ 🤺 🤾 🏌️ 🏇 🧘 🏄 🏊 🤽 🚣 🧗 🚵 🚴 🏆 🥇 🥈 🥉 🏅 🎖️ 🎗️ 🎫 🎟️ 🎪 🎭 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🪕 🎻 🎲 ♟️ 🎯 🎳 🎮 🎰 🧩 🎉 🎊 🎈 🎁 🎀 🪅'.split(' ')},
+  {id:'travel',n:'سفر وأماكن',i:'🚗',e:'🚗 🚕 🚙 🚌 🚎 🏎️ 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🛵 🏍️ 🚲 🛴 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩️ 💺 🛰️ 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥️ 🛳️ ⛴️ 🚢 ⚓ ⛽ 🚧 🚦 🚥 🗺️ 🗿 🗽 🗼 🏰 🏯 🏟️ 🎡 🎢 🎠 ⛲ ⛱️ 🏖️ 🏝️ 🏜️ 🌋 ⛰️ 🏔️ 🗻 🏕️ ⛺ 🏠 🏡 🏘️ 🏗️ 🏭 🏢 🏬 🏣 🏤 🏥 🏦 🏨 🏪 🏫 🏩 💒 🏛️ ⛪ 🕌 🕋 🛕 🌅 🌄 🌠 🎇 🎆 🌇 🌆 🏙️ 🌃 🌌 🌉 🌁'.split(' ')},
+  {id:'objects',n:'مدرسة وأدوات',i:'💡',e:'📚 📖 📕 📗 📘 📙 📓 📔 📒 📃 📄 📑 🔖 🏷️ ✏️ ✒️ 🖊️ 🖋️ 🖌️ 🖍️ 📝 📁 📂 🗂️ 📅 📆 🗒️ 🗓️ 📇 📈 📉 📊 📋 📌 📍 📎 🖇️ 📏 📐 ✂️ 🗃️ 🗄️ 🗑️ 🔒 🔓 🔏 🔐 🔑 🗝️ 🔨 🪓 ⛏️ ⚒️ 🛠️ 🔧 🔩 ⚙️ 🧰 🧲 ⚖️ 🔗 🧪 🧫 🧬 🔬 🔭 📡 🧮 💻 🖥️ 🖨️ ⌨️ 🖱️ 💽 💾 💿 📀 📱 📲 ☎️ 📞 📟 📠 📺 📻 🎙️ 📷 📸 📹 🎥 📽️ 🔍 🔎 🕯️ 💡 🔦 🏮 🔋 🔌 ⏰ ⏱️ ⏲️ ⌛ ⏳ 📡 💰 💵 💳 🎒 👓 🕶️ 🥼 👔 👕 👖 🧣 🧤 🧥 👗 👟 👞 🎓 🧢 👑 💍 💎 🔔 📢 📣 ✉️ 📧 📨 📩 📤 📥 📦 📫 🗳️ 🧸 🪁 🧵 🧶 🛒 🚪 🪑 🛏️ 🛋️ 🚿 🛁 🧴 🧹 🧺 🧻 🧼 🧽 🧯 💊 🩹 🩺 🌡️'.split(' ')},
+  {id:'symbols',n:'رموز',i:'❤️',e:'❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ 🕉️ ☸️ ✡️ ☯️ ☦️ 🛐 ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ 🆔 ⚛️ ☢️ ☣️ 📴 📳 🆚 💮 🉐 ❌ ⭕ 🛑 ⛔ 📛 🚫 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 🚭 ❗ ❕ ❓ ❔ ‼️ ⁉️ 🔅 🔆 〽️ ⚠️ 🚸 🔱 ⚜️ 🔰 ♻️ ✅ 🈯 💹 ❇️ ✳️ ❎ 🌐 💠 Ⓜ️ 🌀 💤 🏧 🚾 ♿ 🅿️ 🚹 🚺 🚼 🚻 🚮 🎦 📶 🆗 🆙 🆒 🆕 🆓 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🔢 #️⃣ *️⃣ ▶️ ⏸️ ⏯️ ⏹️ ⏺️ ⏭️ ⏮️ ⏩ ⏪ 🔀 🔁 🔂 ◀️ 🔼 🔽 ➡️ ⬅️ ⬆️ ⬇️ ↗️ ↘️ ↙️ ↖️ ↕️ ↔️ ↪️ ↩️ ⤴️ ⤵️ 🔄 🔃 🎵 🎶 ➕ ➖ ➗ ✖️ 🟰 ♾️ 💲 ™️ ©️ ®️ 〰️ ➰ ➿ 🔚 🔙 🔛 🔝 🔜 ✔️ ☑️ 🔘 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪ 🟤 🔺 🔻 🔸 🔹 🔶 🔷 🔳 🔲 ▪️ ▫️ ◾ ◽ ◼️ ◻️ 🟥 🟧 🟨 🟩 🟦 🟪 ⬛ ⬜ 🟫 🔈 🔇 🔉 🔊 🔕 💬 💭 🗯️ ♠️ ♣️ ♥️ ♦️ 🃏 🎴 🀄 🕐 🕑 🕒 🕓 🕔 🕕 🕖 🕗 🕘 🕙 🕚 🕛'.split(' ')},
+  {id:'flags',n:'أعلام',i:'🏳️',e:'🇮🇶 🇸🇦 🇰🇼 🇦🇪 🇶🇦 🇧🇭 🇴🇲 🇾🇪 🇯🇴 🇸🇾 🇱🇧 🇵🇸 🇪🇬 🇸🇩 🇱🇾 🇹🇳 🇩🇿 🇲🇦 🇲🇷 🇮🇷 🇹🇷 🇫🇷 🇬🇧 🇺🇸 🇩🇪 🇮🇹 🇪🇸 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇸🇪 🇳🇴 🇫🇮 🇩🇰 🇷🇺 🇺🇦 🇵🇱 🇬🇷 🇨🇳 🇯🇵 🇰🇷 🇮🇳 🇵🇰 🇮🇩 🇲🇾 🇦🇺 🇨🇦 🇲🇽 🇧🇷 🇦🇷 🇳🇬 🇿🇦 🏳️ 🏴 🏁 🚩 🎌 🏴‍☠️ 🇺🇳'.split(' ')},
+];
+const OSK_TONE_BASE=new Set('👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🙏 ✍️ 💅 🤳 💪 👂 👃 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵'.split(' '));
+const OSK_TONES=['\u{1F3FB}','\u{1F3FC}','\u{1F3FD}','\u{1F3FE}','\u{1F3FF}'];
+const oskTones=e=>{ const b=e.replace(/\uFE0F/g,''); return [e,...OSK_TONES.map(t=>b+t)]; };
+const OSK_EMOJI=OSK_EMOJI_CATS.slice(1).flatMap(c=>c.e);
+const Keyboard={
+  el:null, target:null, lang:null, page:'abc', shift:0, lastTouch:0, lastPtr:0, lastHw:0, hideT:0, mods:new Set(),
+  enabledLangs(){ const l=(S.kbdLangs||['ar','en','fr']).filter(x=>OSK_LANGS[x]); return l.length?l:['ar']; },
+  init(){
+    if(!S.kbdLangs) S.kbdLangs=['ar','en','fr'];
+    if(!S.oskMode) S.oskMode='auto';
+    if(!S.oskSize) S.oskSize='m';
+    this.lang=S.kbdLang&&OSK_LANGS[S.kbdLang]?S.kbdLang:this.enabledLangs()[0];
+    const el=document.createElement('div'); el.id='osk'; el.hidden=true; el.setAttribute('dir','ltr');
+    el.innerHTML='<div class="osk-bar"></div><div class="osk-row osk-xrow"></div><div class="osk-keys"></div><div class="osk-pop" hidden></div><div class="osk-alt" hidden></div>';
+    if(window.OSK_SHADOW){
+      const host=document.createElement('alh-osk');
+      host.style.cssText='all:initial;position:fixed;left:0;right:0;bottom:0;z-index:2147483647;display:block';
+      const root=host.attachShadow({mode:'closed'});
+      const st=document.createElement('style'); st.textContent=OSK_SHADOW.css; root.appendChild(st); root.appendChild(el);
+      (document.body||document.documentElement).appendChild(host); this.root=root; this.host=host;
+    } else document.body.appendChild(el);
+    this.el=el;
+    addEventListener('pointerdown',e=>{ this.lastPtr=Date.now(); if(e.pointerType==='touch'||e.pointerType==='pen') this.lastTouch=Date.now(); },true);
+    addEventListener('touchstart',()=>{ this.lastPtr=this.lastTouch=Date.now(); },{capture:true,passive:true});
+    addEventListener('keydown',e=>{ if(e.isTrusted&&e.key&&e.key.length===1&&!(e.composedPath?e.composedPath():[e.target]).includes(this.el)&&!(this.target&&this.target.alhSink)){ this.lastHw=Date.now(); if(S.oskMode!=='always') this.hide(); } },true);
+    document.addEventListener('focusin',e=>this.onFocus(e.composedPath?e.composedPath()[0]:e.target));
+    document.addEventListener('focusout',()=>{ clearTimeout(this.hideT); this.hideT=setTimeout(()=>{ if(!this.editable(this.deepActive())) this.hide(); },120); });
+    el.addEventListener('pointerdown',e=>this.down(e));
+    el.addEventListener('contextmenu',e=>e.preventDefault());
+    new ResizeObserver(()=>this.fit()).observe(el);
+    this.syncBtn();
+  },
+  deepActive(){ let a=document.activeElement; while(a&&a.shadowRoot&&a.shadowRoot.activeElement) a=a.shadowRoot.activeElement; return a; },
+  sink(){ return window.OSK_EXT||(this.target&&this.target.alhSink)||null; },
+  editable(t){
+    if(!t||t===document.body) return false;
+    if(t.isContentEditable) return true;
+    if(t.tagName==='TEXTAREA') return !t.readOnly&&!t.disabled;
+    if(t.tagName==='INPUT'){ const ty=(t.type||'text').toLowerCase(); return ['text','search','password','email','url','tel','number'].includes(ty)&&!t.readOnly&&!t.disabled; }
+    return false;
+  },
+  onFocus(t){
+    if(!this.editable(t)) return;
+    clearTimeout(this.hideT);
+    const mode=S.oskMode||'auto';
+    if(mode==='off') return;
+    if(mode==='auto'){ const now=Date.now(); if(now-this.lastPtr>1500) return; if(now-this.lastHw<60000&&now-this.lastTouch>1500) return; }
+    this.target=t;
+    if(t.type==='number'||t.type==='tel') this.page='sym1';
+    this.show();
+  },
+  show(){
+    const el=this.el; el.className='osk-'+(S.oskSize||'m')+(this.dark?' dk':''); el.hidden=false; this.render();
+    requestAnimationFrame(()=>{ this.fit(); try{ this.target&&this.target.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} });
+    if(typeof Role!=='undefined'&&Role.asking) Role.kbdSync();
+  },
+  hide(){ if(window.OSK_EXT) OSK_EXT.hide(); if(this.el.hidden) return; this.el.hidden=true; this.closeAlt(); document.documentElement.style.setProperty('--osk-h','0px'); this.page='abc'; if(typeof Role!=='undefined'&&Role.asking) Role.kbdSync(); },
+  fit(){ const h=this.el.hidden?0:this.el.offsetHeight; if(window.OSK_EXT){ OSK_EXT.height(h); return; } if(window.OSK_SHADOW){ OSK_SHADOW.fit(h); return; } document.documentElement.style.setProperty('--osk-h',h+'px'); },
+  rows(){
+    if(this.page==='sym1') return OSK_SYM1;
+    if(this.page==='sym2') return OSK_SYM2;
+    return OSK_LANGS[this.lang].rows;
+  },
+  label(k){
+    const L=OSK_LANGS[this.lang];
+    if(typeof k==='object') return k.k;
+    if(this.page==='abc'&&this.shift){ if(L.shift&&L.shift[k]) return L.shift[k]; return k.toUpperCase(); }
+    if(this.page==='sym1'&&/^\d$/.test(k)&&this.lang==='ar'&&S.ar) return AR_D[k];
+    return k;
+  },
+  render(){
+    const L=OSK_LANGS[this.lang], langs=this.enabledLangs();
+    this.el.querySelector('.osk-bar').innerHTML=`
+      <button class="ob" data-okey="#hide" title="إخفاء">${icon('chevDown')}</button>
+      <div class="osk-langs">${langs.map(l=>`<button class="ol${l===this.lang?' on':''}" data-okey="#setlang" data-l="${l}">${OSK_LANGS[l].n}</button>`).join('')}</div>
+      <span class="grow"></span>
+      <button class="ob${this.page==='emoji'?' on':''}" data-okey="#emoji" title="إيموجي"><span style="font-size:22px">☺</span></button>
+      ${window.OSK_EXT||window.OSK_SHADOW||window.OSK_NOSET?'':`<button class="ob" data-okey="#settings" title="إعدادات الكيبورد">${icon('gear')}</button>`}`;
+    const xr=this.el.querySelector('.osk-xrow');
+    if(xr) xr.innerHTML=this.sink()&&S.oskTermKeys!==false?[['#x-Escape','Esc'],['#x-Tab','Tab ⇥'],['#m-ctrl','Ctrl'],['#m-alt','Alt'],['#x-Home','Home'],['#x-End','End'],['#x-Left','←'],['#x-Up','↑'],['#x-Down','↓'],['#x-Right','→']]
+      .map(([k,l])=>`<button class="k fn${k.startsWith('#m-')&&this.mods.has(k.slice(3))?' lock':''}" data-okey="${k}">${l}</button>`).join(''):'';
+    const keys=this.el.querySelector('.osk-keys');
+    if(this.page==='emoji'){
+      const cat=this.emoCat||((S.emojiRecent||[]).length?'recent':'smile');
+      const C=OSK_EMOJI_CATS.find(c=>c.id===cat)||OSK_EMOJI_CATS[1];
+      const list=cat==='recent'?(S.emojiRecent||[]):C.e;
+      keys.innerHTML=`<div class="osk-emo-t">${C.n}${cat==='recent'&&list.length?' <button class="osk-emo-clr" data-okey="#emoclear">مسح</button>':''}</div>
+        <div class="osk-emoji">${list.length?list.map(e=>`<button class="k${OSK_TONE_BASE.has(e)?' has-alt':''}" data-okey="${e}" data-emo="1">${e}</button>`).join(''):'<div class="osk-emo-empty">الإيموجي اللي تستخدمها تطلع هنا</div>'}</div>
+        <div class="osk-row osk-emo-cats"><button class="k fn" data-okey="#abc">${this.lang==='ar'?'أبج':'ABC'}</button>${OSK_EMOJI_CATS.map(c=>`<button class="k ec${c.id===cat?' on':''}" data-okey="#emocat" data-c="${c.id}" title="${c.n}">${c.i}</button>`).join('')}<button class="k fn" data-okey="#back">${icon('backspace')}</button></div>`;
+      const g=keys.querySelector('.osk-emoji'); if(g) g.scrollTop=0;
+      return;
+    }
+    const rtl=this.page==='abc'&&OSK_LANGS[this.lang].dir==='rtl';
+    const order=row=>{ if(!rtl||row.includes('#space')) return row; const isFn=k=>typeof k==='string'&&k[0]==='#';
+      const lead=[],tail=[],mid=[]; let i=0; while(i<row.length&&isFn(row[i])) lead.push(row[i++]); let j=row.length-1; while(j>=i&&isFn(row[j])) tail.unshift(row[j--]);
+      for(let x=i;x<=j;x++) mid.push(row[x]); return [...lead,...mid.reverse(),...tail]; };
+    keys.innerHTML=this.rows().map(row=>`<div class="osk-row">${order(row).map(k=>this.keyHTML(k)).join('')}</div>`).join('');
+  },
+  keyHTML(k){
+    const L=OSK_LANGS[this.lang];
+    const sp={'#shift':`<button class="k fn w15${this.shift?' on':''}${this.shift===2?' lock':''}" data-okey="#shift">${icon('shiftKey')}</button>`,
+      '#back':`<button class="k fn w15" data-okey="#back">${icon('backspace')}</button>`,
+      '#sym':`<button class="k fn w15" data-okey="#sym1">${this.lang==='ar'&&S.ar?'١٢٣؟':'?123'}</button>`,
+      '#abc':`<button class="k fn w15" data-okey="#abc">${this.lang==='ar'?'أبج':'ABC'}</button>`,
+      '#sym1':`<button class="k fn w15" data-okey="#sym1">?123</button>`,
+      '#sym2':`<button class="k fn w15" data-okey="#sym2">=\\&lt;</button>`,
+      '#lang':`<button class="k fn" data-okey="#lang" title="تبديل اللغة">${icon('globe')}</button>`,
+      '#space':`<button class="k space" data-okey="#space">${L.n}</button>`,
+      '#enter':`<button class="k fn w15 enter" data-okey="#enter">${icon('enterKey')}</button>`};
+    if(typeof k==='string'&&sp[k]) return sp[k];
+    const val=typeof k==='object'?k.k:k, lab=this.label(k);
+    const hasAlt=(typeof k==='object'&&k.alt)||(L.long&&L.long[val]&&this.page==='abc');
+    return `<button class="k${hasAlt?' has-alt':''}" data-okey="${esc(val)}" dir="auto">${esc(lab)}</button>`;
+  },
+  /* ---------- input ---------- */
+  down(e){
+    const b=e.target.closest('[data-okey]');
+    e.preventDefault();
+    if(!b) return;
+    const key=b.dataset.okey;
+    if(b.closest('.osk-alt')){ this.type(key); this.closeAlt(); return; }
+    this.closeAlt();
+    if(S.clickSound&&window.tickSound) tickSound();
+    b.classList.add('down'); const up=()=>{ b.classList.remove('down'); this.popHide(); clearTimeout(this.lpT); clearInterval(this.rep); clearTimeout(this.repT); removeEventListener('pointerup',up,true); removeEventListener('pointercancel',up,true); };
+    addEventListener('pointerup',up,true); addEventListener('pointercancel',up,true);
+    if(key==='#back'){ this.back(); this.repT=setTimeout(()=>{ this.rep=setInterval(()=>this.back(),55); },420); return; }
+    if(key==='#space') return this.spaceDown(e,b);
+    if(key.startsWith('#x-')&&this.sink()){ const k=key.slice(3); this.extKey(k); if(/Left|Right|Up|Down/.test(k)){ this.repT=setTimeout(()=>{ this.rep=setInterval(()=>this.extKey(k),70); },420); } return; }
+    if(key.startsWith('#')) return this.fn(key,b);
+    // character key: preview + long press alternatives
+    const L=OSK_LANGS[this.lang];
+    let alts=null;
+    if(b.dataset.emo){ if(OSK_TONE_BASE.has(key)) alts=oskTones(key).slice(1); }
+    else if(this.page==='abc'){ const obj=L.rows.flat().find(x=>typeof x==='object'&&x.k===key); alts=obj?obj.alt:(L.long&&L.long[key]); }
+    this.popShow(b,this.labelFor(key));
+    let longDone=false;
+    if(alts){ this.lpT=setTimeout(()=>{ longDone=true; this.popHide(); this.openAlt(b,alts); },380); }
+    const commit=ev=>{ removeEventListener('pointerup',commit,true); if(!longDone&&ev.type==='pointerup') this.type(this.labelFor(key)); };
+    addEventListener('pointerup',commit,true);
+  },
+  labelFor(key){
+    const L=OSK_LANGS[this.lang];
+    if(this.page==='abc'&&this.shift){ if(L.shift&&L.shift[key]) return L.shift[key]; return key.toUpperCase(); }
+    if(this.page==='sym1'&&/^\d$/.test(key)&&this.lang==='ar'&&S.ar) return AR_D[key];
+    return key;
+  },
+  fn(key,b){
+    switch(key){
+      case '#hide': this.hide(); if(this.target) this.target.blur(); return;
+      case '#shift': { const now=Date.now(); if(!this.shift){ this.shift=1; this.shiftT=now; } else if(this.shift===1&&now-this.shiftT<400) this.shift=2; else this.shift=0; this.render(); return; }
+      case '#sym1': this.page='sym1'; this.render(); return;
+      case '#sym2': this.page='sym2'; this.render(); return;
+      case '#abc': this.page='abc'; this.render(); return;
+      case '#emoji': this.page=this.page==='emoji'?'abc':'emoji'; this.emoCat=null; this.render(); return;
+      case '#emocat': this.emoCat=b.dataset.c; this.render(); return;
+      case '#emoclear': S.emojiRecent=[]; save(); this.render(); return;
+      case '#lang': { const l=this.enabledLangs(); this.setLang(l[(l.indexOf(this.lang)+1)%l.length]); return; }
+      case '#setlang': this.setLang(b.dataset.l); return;
+      case '#enter': return this.enter();
+      case '#m-ctrl': case '#m-alt': { const m=key.slice(3); this.mods.has(m)?this.mods.delete(m):this.mods.add(m); this.render(); return; }
+      case '#settings': { const t=this.target; this.hide(); if(t) t.blur(); go('settings','time'); return; }
+    }
+  },
+  toggleEnabled(){ S.oskMode=S.oskMode==='off'?'auto':'off'; save(); if(S.oskMode==='off') this.hide(); this.syncBtn(); toast(S.oskMode==='off'?'كيبورد الشاشة: مطفأ':'كيبورد الشاشة: يشتغل'); if(window.Native&&Native.on) Native.pushKbd(); },
+  syncBtn(){ const b=document.getElementById('tbKbd'); if(!b) return; b.hidden=S.oskTopBtn===false; b.classList.toggle('off',S.oskMode==='off'); b.innerHTML=icon(S.oskMode==='off'?'keyboardOff':'keyboard'); },
+  setLang(l){ this.lang=l; S.kbdLang=l; save(); this.page='abc'; this.shift=0; this.render(); },
+  spaceDown(e,b){
+    const x0=e.clientX; let moved=false, acc=0;
+    const mv=ev=>{ const dx=ev.clientX-x0-acc; if(Math.abs(dx)>=18){ const n=Math.trunc(dx/18); acc+=n*18; moved=true; this.moveCaret(n); } };
+    const up=()=>{ removeEventListener('pointermove',mv,true); removeEventListener('pointerup',up,true); if(!moved) this.type(' '); };
+    addEventListener('pointermove',mv,true); addEventListener('pointerup',up,true);
+  },
+  /* ---------- editing primitives ---------- */
+  live(){ const t=this.target; if(!t||!t.isConnected) return null; if(document.activeElement!==t) t.focus({preventScroll:true}); return t; },
+  type(txt){
+    if(this.page==='emoji'&&!/^#/.test(txt)){ S.emojiRecent=[txt,...(S.emojiRecent||[]).filter(x=>x!==txt)].slice(0,32); save(); }
+    const sk=this.sink();
+    if(sk){
+      if(this.target&&this.target.alhSink&&document.activeElement!==this.target) this.target.focus({preventScroll:true});
+      if(this.mods.size){ sk.combo([...this.mods],txt.toLowerCase()); this.mods.clear(); this.render(); }
+      else sk.text(txt);
+      this.extBuf=((this.extBuf||'')+txt).slice(-4);
+      if(this.shift===1){ this.shift=0; this.render(); }
+      else if(this.page==='abc'&&this.lang!=='ar'&&/[.!?]\s$/.test(this.extBuf)){ this.shift=1; this.render(); }
+      return;
+    }
+    const t=this.live(); if(!t) return;
+    if(t.isContentEditable){ document.execCommand('insertText',false,txt); }
+    else if(t.type==='number'){ t.value=(t.value||'')+String(txt).replace(/[٠-٩]/g,d=>AR_D.indexOf(d)); t.dispatchEvent(new Event('input',{bubbles:true})); }
+    else { const s=t.selectionStart??t.value.length, en=t.selectionEnd??s;
+      if(t.maxLength>0&&t.value.length-(en-s)+txt.length>t.maxLength) return;
+      t.setRangeText(txt,s,en,'end'); t.dispatchEvent(new InputEvent('input',{bubbles:true,data:txt,inputType:'insertText'})); }
+    if(this.shift===1){ this.shift=0; this.render(); }
+    else if(this.page==='abc'&&this.lang!=='ar'&&/[.!?]\s$/.test(this.textBefore())) { this.shift=1; this.render(); }
+  },
+  textBefore(){ const t=this.target; if(!t) return ''; if(t.isContentEditable) return ''; try{ return t.value.slice(0,t.selectionStart||0); }catch(e){ return t.value||''; } },
+  extKey(k){ const sk=this.sink(); if(!sk) return; if(this.mods.size){ sk.combo([...this.mods],k,true); this.mods.clear(); this.render(); } else sk.key(k); if(k==='BackSpace') this.extBuf=(this.extBuf||'').slice(0,-1); },
+  back(){
+    if(this.sink()) return this.extKey('BackSpace');
+    const t=this.live(); if(!t) return;
+    if(t.isContentEditable){ document.execCommand('delete'); return; }
+    if(t.type==='number'){ t.value=String(t.value).slice(0,-1); t.dispatchEvent(new Event('input',{bubbles:true})); return; }
+    let s=t.selectionStart, en=t.selectionEnd;
+    if(s===en){ if(!s) return; const before=t.value.slice(0,s); const ch=Array.from(before).pop(); s-=ch.length; }
+    t.setRangeText('',s,en,'end'); t.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'deleteContentBackward'}));
+  },
+  enter(){
+    if(this.sink()){ this.extBuf=''; return this.extKey('Return'); }
+    const t=this.live(); if(!t) return;
+    const ev=new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true});
+    const ok=t.dispatchEvent(ev);
+    if(!ok) return;
+    if(t.tagName==='TEXTAREA') return this.type('\n');
+    if(t.isContentEditable){ document.execCommand('insertLineBreak'); return; }
+    if(t.form){ t.form.requestSubmit?.(); return; }
+    this.hide(); t.blur();
+  },
+  moveCaret(n){
+    if(this.sink()){ for(let i=0;i<Math.abs(n);i++) this.sink().key(n>0?'Right':'Left'); return; }
+    const t=this.live(); if(!t) return;
+    const rtl=getComputedStyle(t).direction==='rtl'||/[\u0600-\u06FF]/.test(t.value||t.textContent||'');
+    const step=rtl?-n:n;
+    if(t.isContentEditable){ const sel=getSelection(); for(let i=0;i<Math.abs(step);i++) sel.modify('move',step>0?'forward':'backward','character'); return; }
+    if(t.type==='number') return;
+    const p=clamp((t.selectionStart||0)+step,0,t.value.length); t.setSelectionRange(p,p);
+  },
+  /* ---------- popups ---------- */
+  popShow(b,txt){ if(S.oskPreview===false) return; const p=this.el.querySelector('.osk-pop'), r=b.getBoundingClientRect(), o=this.el.getBoundingClientRect();
+    p.textContent=txt; p.hidden=false; p.style.left=(r.left-o.left+r.width/2)+'px'; p.style.top=(r.top-o.top)+'px'; },
+  popHide(){ const p=this.el.querySelector('.osk-pop'); if(p) p.hidden=true; },
+  openAlt(b,alts){
+    const a=this.el.querySelector('.osk-alt'), r=b.getBoundingClientRect(), o=this.el.getBoundingClientRect();
+    a.innerHTML=alts.map(x=>`<button class="k" data-okey="${esc(this.shift&&this.lang!=='ar'?x.toUpperCase():x)}">${esc(this.shift&&this.lang!=='ar'?x.toUpperCase():x)}</button>`).join('');
+    a.hidden=false; const w=a.offsetWidth;
+    a.style.left=clamp(r.left-o.left+r.width/2-w/2,4,o.width-w-4)+'px'; a.style.top=(r.top-o.top-a.offsetHeight-6)+'px';
+    // slide finger onto an alternative and release to pick it
+    const pick=ev=>{ const el=(this.root||document).elementFromPoint(ev.clientX,ev.clientY); $$('.osk-alt .k',this.el).forEach(k=>k.classList.toggle('hot',k===el)); };
+    const rel=ev=>{ removeEventListener('pointermove',pick,true); removeEventListener('pointerup',rel,true); const el=(this.root||document).elementFromPoint(ev.clientX,ev.clientY); if(el&&el.closest('.osk-alt [data-okey]')){ this.type(el.closest('[data-okey]').dataset.okey); this.closeAlt(); } };
+    addEventListener('pointermove',pick,true); addEventListener('pointerup',rel,true);
+  },
+  closeAlt(){ const a=this.el&&this.el.querySelector('.osk-alt'); if(a) a.hidden=true; }
+};
+ICONS.backspace='<path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z"/><path d="m12 9 6 6M18 9l-6 6"/>';
+ICONS.shiftKey='<path d="M12 3 3 12h5v8h8v-8h5z"/>';
+ICONS.enterKey='<path d="M20 5v7a3 3 0 0 1-3 3H5"/><path d="m9 11-4 4 4 4"/>';
+ICONS.keyboard='<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>';
+ICONS.keyboardOff='<rect x="2" y="6" width="20" height="12" rx="2" opacity=".45"/><path d="M3 3l18 18"/>';
+ICONS.terminal='<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>';
+
+</script>
+<script>
+"use strict";
+/* =====================================================================
+   CamLink — واجهة الراسبيري 4 (تطلع لمن توصله بشاشة لمس، مثل صبورة الصف)
+   ===================================================================== */
+const C={
+  st:null, nets:[], online:false, busy:false, guides:true, imgOk:false, imgT:0,
+  async api(p,body){
+    const o=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+    const r=await fetch(p,o); const j=await r.json(); if(!r.ok&&!('ok' in j)) throw new Error(j.error||r.status); return j;
+  },
+  init(){
+    Keyboard.init(); paintIcons(document);
+    try{ this.guides=localStorage.getItem('alhGuides')!=='0'; }catch(e){}
+    this.syncGuides();
+    $('#bGuides').onclick=()=>{ this.guides=!this.guides; try{ localStorage.setItem('alhGuides',this.guides?'1':'0'); }catch(e){} this.syncGuides(); };
+    $('#bBig').onclick=()=>{ const m=$('#main'); m.classList.toggle('big'); $('#bBig span').textContent=m.classList.contains('big')?'رجوع':'تكبير'; };
+    $('#cast').onclick=()=>this.toggleCast();
+    $('#bScan').onclick=()=>this.scan(true);
+    $('#bReboot').onclick=()=>this.power('reboot');
+    $('#bOff').onclick=()=>this.power('poweroff');
+    $('#wList').onclick=e=>{ const b=e.target.closest('[data-ssid]'); if(b) this.join(this.nets[+b.dataset.ssid]); };
+    const img=$('#img');
+    img.onload=()=>{ this.imgOk=true; this.imgT=Date.now(); $('#camMsg').hidden=true; $('#tag').classList.add('live'); };
+    img.onerror=()=>{ this.imgOk=false; setTimeout(()=>this.stream(),2000); };
+    this.stream();
+    setInterval(()=>this.clock(),1000); this.clock();
+    this.poll(); setInterval(()=>this.poll(),2000);
+    this.scan(false); setInterval(()=>{ if(!document.querySelector('.ov')) this.scan(false); },20000);
+  },
+  clock(){ const d=new Date(); $('#clk').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); },
+  stream(){ $('#img').src='/stream.mjpg?t='+Date.now(); },
+  syncGuides(){ $('#guides').style.display=this.guides?'':'none'; $('#bGuides').classList.toggle('on',this.guides); },
+  async poll(){
+    try{ this.st=await this.api('/api/status'); this.online=true; }catch(e){ this.online=false; }
+    $('#dot').classList.toggle('on',this.online);
+    if(this.st) this.render();
+  },
+  render(){
+    const s=this.st, pi5=s.pi5.length>0, net=s.internet;
+    // الكاميرا
+    const cam=s.cam;
+    $('#cFps span').textContent=cam.running?`الكاميرا ${cam.fps} صورة/ثانية`+(cam.preview?` · المعاينة ${cam.preview}`:''):'الكاميرا متوقفة';
+    if(cam.err&&!this.imgOk){ $('#camMsg').hidden=false; $('#camMsgT').textContent='الكاميرا ما اشتغلت — تأكد من شريط الكاميرا'; $('#camMsgE').textContent=cam.err; }
+    if(this.imgOk&&Date.now()-this.imgT>6000&&!cam.running){ this.imgOk=false; $('#tag').classList.remove('live'); this.stream(); }
+    const p=$('#cPi5'); p.className='chip '+(pi5?'ok':(s.cast?'':'bad'));
+    $('#cPi5 span').textContent=pi5?'الصبورة تقرا الصورة':(s.cast?'الصبورة ما تقرا الصورة':'البث مطفي');
+    // البث
+    const cb=$('#cast'); cb.classList.toggle('on',s.cast); if(!this.busy) cb.classList.remove('busy');
+    $('#castT').textContent=s.cast?'البث شغّال':'البث مطفي';
+    $('#castS').textContent=s.cast?'اضغط حتى تطفيه':'اضغط حتى يعطي الإنترنت والصورة للراسبيري 5';
+    const link=s.links.usb||s.links.eth, via=[s.links.usb&&'USB-C',s.links.eth&&'Ethernet'].filter(Boolean).join(' و ');
+    this.line('#lImg', !s.cast?['bad','متوقفة — الصبورة ما تشوف الكاميرا']:pi5?['ok','تنبث للصبورة الحين']:link?['warn','جاهزة — فعّل «كاميرا الراسبيري 4» من إعدادات الصبورة']:['bad','الراسبيري 5 مو موصول (لا USB-C ولا Ethernet)']);
+    this.line('#lNet', !s.cast?['bad','متوقف']:!net?['warn','الراسبيري 4 ما بيه إنترنت — اتصل بواي فاي من تحت']:link?['ok','يوصل للصبورة عبر '+via]:['warn','اكو إنترنت، بس الراسبيري 5 مو موصول']);
+    $('#kUsb').className='chip '+(s.links.usb?'ok':''); $('#kEth').className='chip '+(s.links.eth?'ok':'');
+    const ce=$('#castErr'); ce.hidden=!s.castErr; ce.textContent=s.castErr||'';
+    // الواي فاي الحالي
+    const w=s.wifi;
+    $('#wCur').innerHTML=w?`${this.bars(w.signal)}<div class="nm">${esc(w.ssid)}<small>${net?'متصل · اكو إنترنت':'متصل · بدون إنترنت'}</small></div>${icon('check','style="font-size:1.4rem;color:#86efac"')}`
+      :`${icon('wifiOff','style="font-size:1.5rem;color:#fca5a5"')}<div class="nm">مو متصل بواي فاي<small>اختار شبكة من القائمة</small></div>`;
+    // الجهاز
+    const ip=s.ips||{}, rows=[['الحرارة',s.temp!=null?s.temp+' °C':'—'],['الكهرباء',s.power.now?'⚠ ضعيفة هسه':s.power.past?'⚠ ضعفت قبل شوية':'زينة ✓'],
+      ['واي فاي',ip.wlan0||'—'],['USB-C',ip.usb0||'—'],['Ethernet',ip.eth0||'—'],['الإصدار','CamLink '+s.version]];
+    $('#kv').innerHTML=rows.map(([k,v])=>`<dt>${k}</dt><dd${k==='الكهرباء'&&(s.power.now||s.power.past)?' style="color:#fcd34d;direction:rtl;text-align:right"':k==='الكهرباء'?' style="direction:rtl;text-align:right"':''}>${esc(String(v))}</dd>`).join('');
+  },
+  line(sel,[cls,txt]){ const el=$(sel); el.className='ln '+cls; el.querySelector('span:not(.ic)').textContent=txt; },
+  bars(sig){ const n=sig>75?4:sig>50?3:sig>25?2:1; return `<span class="bars">${[1,2,3,4].map(i=>`<i class="${i<=n?'f':''}"></i>`).join('')}</span>`; },
+  async toggleCast(){
+    if(this.busy||!this.st) return; this.busy=true; $('#cast').classList.add('busy');
+    const want=!this.st.cast;
+    try{ const r=await this.api('/api/cast',{on:want}); this.st.cast=r.cast; this.st.castErr=r.err; toast(r.cast?'البث شغّال — الصبورة تاخذ الإنترنت والصورة':'البث انطفى'); }
+    catch(e){ toast('ما گدرت أغيّر البث'); }
+    this.busy=false; this.render(); setTimeout(()=>this.poll(),1500);
+  },
+  async scan(rescan){
+    if(rescan){ $('#bScan').disabled=true; $('#wList').innerHTML='<div class="empty">جاري البحث…</div>'; }
+    try{ const r=await this.api('/api/wifi'+(rescan?'?rescan=1':'')); this.nets=r.nets||[]; }catch(e){}
+    $('#bScan').disabled=false;
+    $('#wList').innerHTML=this.nets.some(n=>!n.active)?this.nets.map((n,i)=>n.active?'':`<button class="net" data-ssid="${i}">${this.bars(n.signal)}<span class="nm">${esc(n.ssid)}</span>${n.secure?icon('lockS','style="font-size:1rem;color:var(--mut)"'):''}</button>`).join('')
+      :'<div class="empty">ما لگيت شبكات ثانية — اضغط «تحديث»</div>';
+  },
+  join(n){
+    if(!n) return;
+    if(n.active){ toast('متصل بهاي الشبكة من قبل'); return; }
+    const ov=document.createElement('div'); ov.className='ov';
+    ov.innerHTML=`<div class="box"><h2>${icon('wifi','style="display:inline-block;vertical-align:-.15em;color:var(--acc)"')} ${esc(n.ssid)}</h2>
+      <p>${n.secure?'اكتب كلمة مرور الشبكة.':'شبكة مفتوحة — ما تحتاج كلمة مرور.'}</p>
+      ${n.secure?`<div class="pwrow"><input class="field" id="wPw" type="password" autocomplete="off" spellcheck="false"><button class="btn" data-b="eye">${icon('eye')}</button></div>`:''}
+      <div class="err" id="wErr"></div>
+      <div class="btns"><button class="btn" data-b="x">إلغاء</button><button class="btn pri" data-b="ok">${icon('wifi')}اتصال</button></div></div>`;
+    document.body.appendChild(ov);
+    const pw=$('#wPw',ov);
+    if(pw){ Keyboard.lastPtr=Keyboard.lastTouch=Date.now(); pw.focus(); pw.addEventListener('keydown',e=>{ if(e.key==='Enter') connect(); }); }
+    const close=()=>{ Keyboard.hide(); ov.remove(); };
+    const connect=async()=>{
+      const v=pw?pw.value:''; if(n.secure&&v.length<8){ $('#wErr',ov).textContent='كلمة المرور لازم ٨ حروف أو أكثر'; return; }
+      const ok=$('[data-b=ok]',ov); ok.disabled=true; ok.innerHTML='<span class="spin"></span>جاري الاتصال…'; $('#wErr',ov).textContent='';
+      Keyboard.hide();
+      let r; try{ r=await this.api('/api/wifi',{ssid:n.ssid,psk:v}); }catch(e){ r={ok:false,error:'الجهاز ما ردّ'}; }
+      if(r.ok){ close(); toast('اتصل بـ '+n.ssid+' ✓'); this.scan(false); this.poll(); }
+      else{ ok.disabled=false; ok.innerHTML=icon('wifi')+'اتصال'; $('#wErr',ov).textContent=r.error||'ما گدرت أتصل'; }
+    };
+    ov.onclick=e=>{ const b=e.target.closest('[data-b]'); if(!b) return;
+      if(b.dataset.b==='x') close(); else if(b.dataset.b==='ok') connect();
+      else if(b.dataset.b==='eye'&&pw){ pw.type=pw.type==='password'?'text':'password'; } };
+  },
+  power(a){
+    const ov=document.createElement('div'); ov.className='ov';
+    const off=a==='poweroff';
+    ov.innerHTML=`<div class="box"><h2>${off?'إطفاء الراسبيري 4؟':'إعادة تشغيل الراسبيري 4؟'}</h2>
+      <p>${off?'الكاميرا والإنترنت يوقفون عن الصبورة لين ترجع تشغّله (افصل الكهرباء ورجعها).':'الكاميرا والإنترنت يوقفون دقيقة تقريباً ويرجعون وحدهم.'}</p>
+      <div class="btns"><button class="btn" data-b="x">إلغاء</button><button class="btn ${off?'red':'pri'}" data-b="ok">${icon(off?'power':'restart')}${off?'إطفاء':'إعادة تشغيل'}</button></div></div>`;
+    document.body.appendChild(ov);
+    ov.onclick=async e=>{ const b=e.target.closest('[data-b]'); if(!b) return; if(b.dataset.b==='x'){ ov.remove(); return; }
+      try{ await this.api('/api/power',{a}); }catch(e){}
+      ov.querySelector('.box').innerHTML=`<h2>${off?'جاري الإطفاء…':'جاري إعادة التشغيل…'}</h2><p>${off?'تكدر تفصل الشاشة هسه.':'الواجهة ترجع وحدها.'}</p>`; };
+  },
+};
+C.init();
+</script>
+</body>
+</html>
+HTMLEOF
+chmod 755 /opt/alharthia-camlink/alharthia_camlink.py
+
+cat > /etc/systemd/system/alharthia-camlink.service <<'UNIT'
+[Unit]
+Description=Alharthia CamLink 2 — camera + touch page for the classroom Raspberry Pi 5
+After=network.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/alharthia-camlink/alharthia_camlink.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable alharthia-camlink
+
+echo "» 4/6 منفذ USB-C يصير شبكة صغيرة ويا الراسبيري 5…"
+BOOT=/boot/firmware; [ -f $BOOT/config.txt ] || BOOT=/boot
+if ! grep -q "alharthia camlink" $BOOT/config.txt; then
+  printf '\n[all]\n# alharthia camlink: USB-C as a network device for the Raspberry Pi 5\ndtoverlay=dwc2,dr_mode=peripheral\n' >> $BOOT/config.txt
+fi
+printf 'dwc2\ng_ether\n' > /etc/modules-load.d/alharthia-camlink.conf
+echo 'options g_ether host_addr=02:a1:7a:00:00:01 dev_addr=02:a1:7a:00:00:02' > /etc/modprobe.d/alharthia-camlink.conf
+install -d -m 700 /etc/NetworkManager/system-connections
+cat > /etc/NetworkManager/system-connections/alharthia-camlink.nmconnection <<'NM'
+[connection]
+id=alharthia-camlink
+type=ethernet
+autoconnect=true
+
+[ethernet]
+mac-address=02:A1:7A:00:00:02
+
+[ipv4]
+method=manual
+address1=10.55.0.2/24
+never-default=true
+
+[ipv6]
+method=disabled
+NM
+chmod 600 /etc/NetworkManager/system-connections/alharthia-camlink.nmconnection
+nmcli connection reload 2>/dev/null || true
+# ملاحظة: زر «البث» بالواجهة يحوّلها لـ shared (إنترنت للراسبيري 5) ويشغّل مشاركة الـ Ethernet (10.42.0.1)
+
+echo "» 5/6 الشاشة: 1080p (حتى لو الصبورة 4K) …"
+CMD=$BOOT/cmdline.txt
+grep -q "video=HDMI-A-1" "$CMD" || sed -i '1 s/$/ video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:1920x1080@60/' "$CMD"
+
+echo "» 6/6 الواجهة تفتح وحدها لمن توصل شاشة…"
+if [ -n "$BROWSER" ]; then
+  if [ "$(systemctl get-default)" = "graphical.target" ]; then
+    echo "   الجهاز كان يفتح سطح مكتب — نخليه يفتح واجهة CamLink بداله"
+    systemctl set-default multi-user.target
+  fi
+  mkdir -p /etc/systemd/system/getty@tty1.service.d
+  cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<AL
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $U --noclear %I \$TERM
+AL
+  cat > "$H/.alharthia-camlink-ui.sh" <<RUN
+#!/bin/bash
+# واجهة CamLink — تشتغل بس لمن تنربط شاشة HDMI، وتنطفي لمن تنفصل (حتى ما تاكل من المعالج)
+PAGE="http://127.0.0.1:8767/"
+hdmi(){ grep -qs '^connected' /sys/class/drm/card*-HDMI-A-*/status; }
+while true; do
+  if hdmi; then
+    if [ "$BROWSER" = "cog" ]; then
+      cage -s -- cog --platform=wl "\$PAGE" &
+    else
+      cage -s -- $BROWSER --kiosk --noerrdialogs --disable-infobars --no-first-run --touch-events=enabled \\
+        --ozone-platform=wayland --password-store=basic --overscroll-history-navigation=0 --disable-pinch \\
+        --check-for-update-interval=31536000 --user-data-dir="\$HOME/.alh-camlink-browser" "\$PAGE" &
+    fi
+    P=\$!
+    while kill -0 \$P 2>/dev/null; do sleep 3; hdmi || { kill \$P 2>/dev/null; break; }; done
+    wait \$P 2>/dev/null
+    sleep 2
+  else
+    sleep 3
+  fi
+done
+RUN
+  chmod 755 "$H/.alharthia-camlink-ui.sh"; chown "$U:$U" "$H/.alharthia-camlink-ui.sh"
+  PROFILE="$H/.bash_profile"
+  grep -q alharthia-camlink-ui "$PROFILE" 2>/dev/null || cat >> "$PROFILE" <<'PR'
+# Alharthia CamLink — الواجهة تفتح بس على الشاشة (tty1)، مو بالـ SSH
+if [ "$(tty)" = "/dev/tty1" ]; then exec "$HOME/.alharthia-camlink-ui.sh"; fi
+PR
+  chown "$U:$U" "$PROFILE"
+  usermod -aG video,input,render "$U" 2>/dev/null || true
+fi
+
+echo
+echo "✓ خلص. هسه:"
+echo "  1) طفّي الراسبيري 4."
+echo "  2) وصّله بالراسبيري 5: كيبل USB-C (بأي منفذ USB-A بالراسبيري 5)، أو كيبل Ethernet ويا شاحنه."
+echo "  3) حتى تشوف الواجهة: وصّل HDMI واللمس (USB) مال الصبورة بالراسبيري 4 مؤقتاً."
+echo "  4) بالراسبيري 5: الإعدادات ← الكاميرا ← «كاميرا الراسبيري 4»."
+read -r -p "إعادة تشغيل هسه؟ [Y/n] " a; [ "${a:-Y}" = n ] || reboot
