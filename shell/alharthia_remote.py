@@ -176,10 +176,49 @@ def rename_device(dev_id, name):
     _save(DEV_FILE, d)
 
 
+def get_prefs(dev_id):
+    for x in devices()["devices"]:
+        if x.get("id") == dev_id:
+            return x.get("prefs") or {}
+    return {}
+
+
+def set_prefs(dev_id, b):
+    """إعدادات كل ريموت لحاله (مثل اتجاه الشاشة) — تنحفظ بالصبورة حتى تبقى بعد إعادة التشغيل."""
+    d = devices()
+    for x in d["devices"]:
+        if x.get("id") == dev_id:
+            pr = x.setdefault("prefs", {})
+            if b.get("rot") in (0, 90, 270):
+                pr["rot"] = b["rot"]
+    _save(DEV_FILE, d)
+    return get_prefs(dev_id)
+
+
 def set_enabled(on):
     d = devices()
     d["enabled"] = bool(on)
     _save(DEV_FILE, d)
+
+
+# ------------------------------------------------------------------ ملفات من فلاشة الريموت
+UPLOAD_DIR = os.path.expanduser(os.environ.get("ALH_REMOTE_UPLOADS", "~/Documents/من الريموت"))
+MAX_UPLOAD = 4 * 1024 ** 3
+
+
+def _safe_name(name):
+    n = os.path.basename(str(name or "").replace("\\", "/")).strip().lstrip(".")
+    n = "".join(ch for ch in n if ch not in '<>:"|?*' and ord(ch) >= 32)[:150]
+    return n or "ملف"
+
+
+def _unique(folder, name):
+    base, ext = os.path.splitext(name)
+    p, i = os.path.join(folder, name), 2
+    while os.path.exists(p):
+        p = os.path.join(folder, "%s (%d)%s" % (base, i, ext))
+        i += 1
+    return p
 
 
 # ------------------------------------------------------------------ teacher tasks
@@ -330,6 +369,17 @@ class RemoteHandler(BaseHTTPRequestHandler):
                     self.wfile.write(data)
                     return
             return self.send_json({"error": "not found"}, 404)
+        if u.path == "/agent.py":                 # برنامج الريموت المساعد (المايك والفلاشة) — يتحدث وحده من الصبورة
+            cand = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alharthia_remote_agent.py")
+            if os.path.isfile(cand):
+                data = open(cand, "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/x-python; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            return self.send_json({"error": "not found"}, 404)
         if u.path == "/api/hello":
             return self.send_json({"ok": True, "name": "AlharthiaOS", "version": ST["version"], "host": socket.gethostname()})
         if u.path == "/api/pair" and m == "POST":
@@ -364,6 +414,64 @@ class RemoteHandler(BaseHTTPRequestHandler):
                         c = dict(c, dev=dev["name"])
                         seq = push(c)
                 return self.send_json({"ok": True, "seq": seq})
+            if u.path == "/api/voice":
+                import alharthia_stt as stt
+                if m != "POST":
+                    return self.send_json(stt.status())
+                n = int(self.headers.get("Content-Length") or 0)
+                if n <= 44 or n > 30 * 1024 * 1024:
+                    return self.send_json({"error": "تسجيل غير صالح"}, 400)
+                import tempfile
+                fd, tmp = tempfile.mkstemp(suffix=".wav", prefix="alh-voice-")
+                try:
+                    with os.fdopen(fd, "wb") as f:
+                        left = n
+                        while left > 0:
+                            chunk = self.rfile.read(min(65536, left))
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            left -= len(chunk)
+                    return self.send_json(stt.transcribe(tmp, (q.get("lang") or ["ar"])[0][:5]))
+                finally:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+            if u.path == "/api/upload" and m == "POST":
+                n = int(self.headers.get("Content-Length") or 0)
+                if n < 0 or n > MAX_UPLOAD:
+                    return self.send_json({"error": "الملف كبير"}, 413)
+                os.makedirs(UPLOAD_DIR, exist_ok=True)
+                import shutil
+                if shutil.disk_usage(UPLOAD_DIR).free < n + 200 * 1024 ** 2:
+                    return self.send_json({"error": "ماكو مساحة كافية بالصبورة"}, 507)
+                dest = _unique(UPLOAD_DIR, _safe_name((q.get("name") or [""])[0]))
+                part = dest + ".part"
+                got = 0
+                try:
+                    with open(part, "wb") as f:
+                        while got < n:
+                            chunk = self.rfile.read(min(262144, n - got))
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            got += len(chunk)
+                    if got != n:
+                        raise OSError("انقطع النقل")
+                    os.replace(part, dest)
+                except OSError as e:
+                    try:
+                        os.remove(part)
+                    except OSError:
+                        pass
+                    return self.send_json({"error": str(e)}, 500)
+                st = os.stat(dest)
+                ext = os.path.splitext(dest)[1].lower().lstrip(".")
+                return self.send_json({"ok": True, "path": dest, "name": os.path.basename(dest), "size": st.st_size,
+                                       "mtime": int(st.st_mtime), "ext": ext})
+            if u.path == "/api/prefs":
+                return self.send_json(set_prefs(dev["id"], self.jbody()) if m == "POST" else get_prefs(dev["id"]))
             if u.path == "/api/tasks":
                 return self.send_json(tasks_do(self.jbody()) if m == "POST" else tasks())
             if u.path == "/api/files":

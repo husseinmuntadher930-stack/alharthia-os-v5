@@ -1462,11 +1462,8 @@ const Keyboard={
       const g=keys.querySelector('.osk-emoji'); if(g) g.scrollTop=0;
       return;
     }
-    const rtl=this.page==='abc'&&OSK_LANGS[this.lang].dir==='rtl';
-    const order=row=>{ if(!rtl||row.includes('#space')) return row; const isFn=k=>typeof k==='string'&&k[0]==='#';
-      const lead=[],tail=[],mid=[]; let i=0; while(i<row.length&&isFn(row[i])) lead.push(row[i++]); let j=row.length-1; while(j>=i&&isFn(row[j])) tail.unshift(row[j--]);
-      for(let x=i;x<=j;x++) mid.push(row[x]); return [...lead,...mid.reverse(),...tail]; };
-    keys.innerHTML=this.rows().map(row=>`<div class="osk-row">${order(row).map(k=>this.keyHTML(k)).join('')}</div>`).join('');
+    /* الحروف تنرسم بنفس ترتيب الكيبورد العربي القياسي (ض فوق يسار، ج فوق يمين) — مثل كيبورد الحاسبة والموبايل، بدون قلب */
+    keys.innerHTML=this.rows().map(row=>`<div class="osk-row">${row.map(k=>this.keyHTML(k)).join('')}</div>`).join('');
   },
   keyHTML(k){
     const L=OSK_LANGS[this.lang];

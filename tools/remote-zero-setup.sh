@@ -17,7 +17,7 @@ URL="${URL%/}/"
 U="${SUDO_USER:-teacher}"; H="$(getent passwd "$U" | cut -d: -f6)"
 [ -d "$H" ] || { echo "ما لگيت المستخدم $U"; exit 1; }
 
-echo "» 1/6 الشبكة"
+echo "» 1/7 الشبكة"
 if [ -n "$SSID" ]; then
   nmcli radio wifi on || true
   nmcli device wifi rescan 2>/dev/null || true; sleep 3
@@ -25,9 +25,9 @@ if [ -n "$SSID" ]; then
   nmcli connection modify alharthia-remote connection.autoconnect yes connection.autoconnect-priority 50 2>/dev/null || true
 fi
 
-echo "» 2/6 البرامج (متصفح خفيف + خط عربي)"
+echo "» 2/7 البرامج (متصفح خفيف + خط عربي)"
 apt-get update || true
-apt-get install -y --no-install-recommends cage fonts-noto-core fonts-dejavu-core curl python3 || true
+apt-get install -y --no-install-recommends cage fonts-noto-core fonts-dejavu-core curl python3 alsa-utils exfatprogs ntfs-3g || true
 BROWSER=""
 if apt-get install -y --no-install-recommends cog >/dev/null 2>&1 || command -v cog >/dev/null; then BROWSER="cog"; fi
 if [ -z "$BROWSER" ]; then
@@ -38,7 +38,7 @@ fi
 [ -n "$BROWSER" ] || { echo "ما گدرت أنصب متصفح — تأكد من الإنترنت وعيد"; exit 1; }
 echo "   المتصفح: $BROWSER"
 
-echo "» 3/6 الربط ويا الصبورة"
+echo "» 3/7 الربط ويا الصبورة"
 TOKFILE="$H/.alharthia-remote-token"
 TOKEN="$(cat "$TOKFILE" 2>/dev/null || true)"
 if [ -n "$TOKEN" ] && curl -fs -H "X-Remote-Token: $TOKEN" "${URL}api/tasks" >/dev/null; then
@@ -58,7 +58,7 @@ else
   echo "   انربط ✓"
 fi
 
-echo "» 4/6 الشاشة (Waveshare 5 إنج)"
+echo "» 4/7 الشاشة (Waveshare 5 إنج)"
 CFG=/boot/firmware/config.txt; [ -f "$CFG" ] || CFG=/boot/config.txt
 grep -q "Alharthia remote" "$CFG" || cat >> "$CFG" <<'CFGEOF'
 
@@ -69,7 +69,7 @@ CFGEOF
 CMD=/boot/firmware/cmdline.txt; [ -f "$CMD" ] || CMD=/boot/cmdline.txt
 grep -q "video=HDMI-A-1" "$CMD" || sed -i '1 s/$/ video=HDMI-A-1:800x480M@60 consoleblank=0/' "$CMD"
 
-echo "» 5/6 التشغيل التلقائي (الريموت يفتح وحده عند التشغيل)"
+echo "» 5/7 التشغيل التلقائي (الريموت يفتح وحده عند التشغيل)"
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<AL
 [Service]
@@ -106,7 +106,34 @@ PR
 chown "$U:$U" "$PROFILE"
 usermod -aG video,input,render "$U" 2>/dev/null || true
 
-echo "» 6/6 توفير البطارية"
+echo "» 6/7 المساعد: المايك (الكلام ← نص) والفلاشة (نسخ للصبورة)"
+install -d /opt/alharthia-remote
+cat > /etc/alharthia-remote.json <<CONF
+{"url": "${URL}", "token_file": "$H/.alharthia-remote-token"}
+CONF
+chmod 644 /etc/alharthia-remote.json
+curl -fsm 20 "${URL}agent.py" -o /opt/alharthia-remote/agent.py || echo "تحذير: ما نزل المساعد من الصبورة — حدّث الصبورة وعيد"
+cat > /etc/systemd/system/alharthia-remote-agent.service <<UNIT
+[Unit]
+Description=Alharthia remote agent — USB microphone and USB flash for the teacher remote
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# كل تشغيل ياخذ آخر نسخة من الصبورة (إذا الصبورة شغالة)
+ExecStartPre=-/bin/sh -c 'curl -fsm 8 "${URL}agent.py" -o /opt/alharthia-remote/agent.py.new && mv -f /opt/alharthia-remote/agent.py.new /opt/alharthia-remote/agent.py'
+ExecStart=/usr/bin/python3 /opt/alharthia-remote/agent.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable alharthia-remote-agent 2>/dev/null || true
+usermod -aG audio "$U" 2>/dev/null || true
+
+echo "» 7/7 توفير البطارية"
 # نطفي البلوتوث (ما نحتاجه) — الـ Wi-Fi يبقى
 grep -q "dtoverlay=disable-bt" "$CFG" || echo "dtoverlay=disable-bt" >> "$CFG"
 systemctl disable --now hciuart 2>/dev/null || true

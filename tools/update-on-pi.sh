@@ -54,6 +54,26 @@ UNIT
 systemctl daemon-reload || true
 systemctl enable alharthia-rtc 2>/dev/null || true
 
+# الكلام إلى نص من الريموت (بدون إنترنت): whisper.cpp + ملف اللغة (مرة وحدة، ~5 دقائق أول مرة)
+WH=/opt/whisper.cpp
+if [ ! -x "$WH/build/bin/whisper-cli" ] && [ ! -x "$WH/build/bin/main" ]; then
+  echo "» تنصيب تحويل الكلام إلى نص (whisper.cpp) — ياخذ كم دقيقة أول مرة…"
+  apt-get install -y --no-install-recommends build-essential cmake git || true
+  if [ ! -d "$WH/.git" ]; then rm -rf "$WH"; git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$WH" || echo "تحذير: ما نزل whisper.cpp"; fi
+  if [ -d "$WH" ]; then
+    (cd "$WH" && cmake -B build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON >/dev/null \
+      && cmake --build build -j4 --config Release >/dev/null) || echo "تحذير: بناء whisper.cpp فشل"
+  fi
+fi
+if [ -d "$WH" ] && [ ! -s "$WH/models/ggml-small-q5_1.bin" ]; then
+  echo "» تنزيل ملف اللغة (~190MB)…"
+  mkdir -p "$WH/models"
+  curl -fL --retry 3 -o "$WH/models/ggml-small-q5_1.bin.part" \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin \
+    && mv "$WH/models/ggml-small-q5_1.bin.part" "$WH/models/ggml-small-q5_1.bin" \
+    || echo "تحذير: ما نزل ملف اللغة — ميزة الكلام إلى نص ما تشتغل لين تحدّث والإنترنت شغال"
+fi
+
 # AirPlay receiver (آيفون / آيباد يعكسون شاشتهم على الجهاز) — يشتغل عند الطلب فقط
 cat > /etc/systemd/system/alharthia-airplay.service <<UNIT
 [Unit]

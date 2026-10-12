@@ -66,6 +66,22 @@ header .scr{color:var(--mut);font-size:14px;white-space:nowrap;overflow:hidden;t
 header .les{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--card);white-space:nowrap}
 header .les.warn{background:#7c2d12;color:#fed7aa}
 header .clk{font-weight:800;font-size:16px;direction:ltr}
+.rotb{width:38px;height:38px;border-radius:11px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;flex:none}
+.rotb svg{font-size:21px}
+.rotb:active{background:var(--card2)}
+#pairRot{position:fixed;top:12px;left:12px;z-index:5}
+/* ---------- الاتجاه العمودي: نلف الصفحة كلها (اللمس يلف وياها) ---------- */
+html[data-rot] body{position:fixed!important;top:0;left:0;width:100vh!important;height:100vw!important;transform-origin:0 0}
+html[data-rot="90"] body{transform:translateX(100vw) rotate(90deg)}
+html[data-rot="270"] body{transform:translateY(100vh) rotate(-90deg)}
+html[data-rot] .grid{grid-template-columns:repeat(2,1fr);grid-template-rows:none;grid-auto-rows:1fr}
+html[data-rot] .pick{grid-column:span 2}
+html[data-rot] .grid .wide{grid-column:span 2}
+html[data-rot] .padwrap{inset:8px 8px 74px 8px}
+html[data-rot] .side{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:58px;flex-direction:row}
+html[data-rot] #pair{grid-template-columns:1fr;align-content:center}
+html[data-rot] header .scr{display:none}
+html[data-rot] header .ttl{flex:1}
 main{position:relative;overflow:hidden}
 .tab{position:absolute;inset:0;padding:10px 12px;overflow:auto}
 nav{display:grid;grid-template-columns:repeat(5,1fr);background:var(--bg2);border-top:1px solid var(--line)}
@@ -73,12 +89,34 @@ nav button{display:flex;flex-direction:column;align-items:center;justify-content
 nav button svg{font-size:23px}
 nav button.on{color:var(--acc)}
 /* ---------- home ---------- */
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;height:calc(100% - 14px);grid-template-rows:1.25fr 1fr 1fr}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;height:calc(100% - 14px);grid-template-rows:1.2fr 1fr 1fr 1fr}
 .tile{background:var(--card);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:15px;border:1px solid var(--line);position:relative;min-height:0}
 .tile svg{font-size:30px}
 .tile:active{transform:scale(.97);background:var(--card2)}
 .tile.acc{background:linear-gradient(160deg,#ff8a4c,#e2582a);border:0}
 .tile.wide{grid-column:span 2}
+.tile.voice{background:linear-gradient(160deg,#0f766e,#115e59);border:0;overflow:hidden;padding:4px 8px}
+.tile.voice span{font-size:14px}
+.tile.voice .vlast{font-size:12px;font-weight:500;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tile.voice.live{background:linear-gradient(160deg,#dc2626,#991b1b)}
+.tile.voice.paused{background:var(--card);border:1px solid var(--line)}
+.rotb.mic.on{color:#4ade80}
+.rotb.mic.speech{color:#fff;background:#dc2626;border-color:#f87171;animation:micp 1s infinite}
+.rotb.mic.off{color:var(--mut)}
+@keyframes micp{50%{box-shadow:0 0 0 6px rgba(239,68,68,.3)}}
+.tile.hz{flex-direction:row;gap:10px}
+.tile.hide{display:none}
+/* ---------- الفلاشة ---------- */
+.seg{display:flex;background:var(--card);border-radius:12px;padding:3px;gap:3px;flex:none}
+.seg button{padding:8px 14px;border-radius:9px;font-weight:700;font-size:14px;color:var(--mut);display:flex;align-items:center;gap:6px}
+.seg button.on{background:var(--acc);color:#fff}
+.seg svg{font-size:17px}
+.prog{position:fixed;left:12px;right:12px;bottom:calc(var(--osk-h) + 70px);background:#0b1636;border:1px solid var(--line);border-radius:14px;padding:10px 14px;z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.prog b{display:block;font-size:14px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prog i{display:block;height:8px;border-radius:4px;background:var(--card);overflow:hidden}
+.prog i::after{content:"";display:block;height:100%;width:var(--p,0%);background:var(--acc);transition:width .3s}
+.sheet{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.sheet .btn{justify-content:center;padding:14px}
 .tile.dis{opacity:.4;pointer-events:none}
 .pick{grid-column:span 2;grid-row:span 1;background:linear-gradient(160deg,#1f3b80,#13265a);flex-direction:row;gap:14px;padding:0 16px;justify-content:flex-start}
 .pick .nm{font-size:22px;font-weight:800;line-height:1.2;text-align:right;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -148,6 +186,7 @@ nav button.on{color:var(--acc)}
 </head>
 <body>
 <div id="pair" hidden>
+  <button class="rotb" id="pairRot" title="تدوير الشاشة"><svg class="i" data-i="rotate"></svg></button>
   <div>
     <div class="brand">Alharthia<b>OS</b> · الريموت</div>
     <p style="color:var(--mut);margin:0;font-size:16px;line-height:1.6">من الصبورة: <b style="color:var(--text)">الإعدادات ← الريموت ← ربط ريموت جديد</b><br>واكتب الرمز الي يطلع على الصبورة.</p>
@@ -159,7 +198,7 @@ nav button.on{color:var(--acc)}
 
 <div id="app" hidden>
   <header><span class="dot" id="dot"></span><span class="ttl">Alharthia<b>OS</b></span><span class="scr" id="scr"></span>
-    <span class="les" id="les" hidden></span><span class="clk" id="clk"></span></header>
+    <span class="les" id="les" hidden></span><span class="clk" id="clk"></span><button class="rotb mic" id="micInd" hidden title="المايك"></button><button class="rotb" id="rotBtn" title="تدوير الشاشة"><svg class="i" data-i="rotate"></svg></button></header>
   <main>
     <section class="tab" data-tab="home"></section>
     <section class="tab" data-tab="write" hidden></section>
@@ -306,6 +345,13 @@ ICONS.curtain='<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h1
 ICONS.swap=ICONS.swap||'<path d="M7 4 3 8l4 4"/><path d="M3 8h12a4 4 0 0 1 4 4"/><path d="m17 20 4-4-4-4"/><path d="M21 16H9a4 4 0 0 1-4-4"/>';
 ICONS.pageNew='<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>';
 ICONS.back=ICONS.chevR;
+ICONS.mic='<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>';
+ICONS.micOff='<path d="M9 9v2a3 3 0 0 0 5 2.2M15 9.3V6a3 3 0 0 0-5.9-.8"/><path d="M5 11a7 7 0 0 0 11.6 5.3M19 11a7 7 0 0 1-.6 2.8M12 18v3M9 21h6M3 3l18 18"/>';
+ICONS.stop='<rect x="6" y="6" width="12" height="12" rx="2"/>';
+ICONS.send='<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>';
+ICONS.flash='<rect x="7" y="9" width="10" height="13" rx="2"/><path d="M9 9V3h6v6M11 5v1M13 5v1"/>';
+ICONS.eject='<path d="M12 4 4 14h16z"/><path d="M4 19h16"/>';
+ICONS.rotate='<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M3 12a9 9 0 0 1 3-6.7M21 12a9 9 0 0 1-3 6.7"/><path d="M3 5.5V9h3.5M21 18.5V15h-3.5"/>';
 ICONS.bell='<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>';
 const S={kbdLangs:['ar','en'],kbdLang:'ar',oskMode:'auto',oskSize:'s',oskPreview:false,oskTermKeys:false,ar:true,clickSound:false,emojiRecent:[]};
 function save(){} function go(){}
@@ -445,11 +491,8 @@ const Keyboard={
       const g=keys.querySelector('.osk-emoji'); if(g) g.scrollTop=0;
       return;
     }
-    const rtl=this.page==='abc'&&OSK_LANGS[this.lang].dir==='rtl';
-    const order=row=>{ if(!rtl||row.includes('#space')) return row; const isFn=k=>typeof k==='string'&&k[0]==='#';
-      const lead=[],tail=[],mid=[]; let i=0; while(i<row.length&&isFn(row[i])) lead.push(row[i++]); let j=row.length-1; while(j>=i&&isFn(row[j])) tail.unshift(row[j--]);
-      for(let x=i;x<=j;x++) mid.push(row[x]); return [...lead,...mid.reverse(),...tail]; };
-    keys.innerHTML=this.rows().map(row=>`<div class="osk-row">${order(row).map(k=>this.keyHTML(k)).join('')}</div>`).join('');
+    /* الحروف تنرسم بنفس ترتيب الكيبورد العربي القياسي (ض فوق يسار، ج فوق يمين) — مثل كيبورد الحاسبة والموبايل، بدون قلب */
+    keys.innerHTML=this.rows().map(row=>`<div class="osk-row">${row.map(k=>this.keyHTML(k)).join('')}</div>`).join('');
   },
   keyHTML(k){
     const L=OSK_LANGS[this.lang];
@@ -609,7 +652,7 @@ ICONS.terminal='<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3
    ريموت المعلم — صفحة تشتغل على Raspberry Pi Zero 2 W ويا شاشة 5 إنج
    ===================================================================== */
 const R={
-  tok:'', st:{}, v:0, online:false, tab:'home', path:'', files:null, tasks:[], color:'#111827', pen:'pen', ptrMode:'laser',
+  rot:0, agent:null, src:'board', upath:'', ufiles:null, tok:'', st:{}, v:0, online:false, tab:'home', path:'', files:null, tasks:[], color:'#111827', pen:'pen', ptrMode:'laser',
   q:[], sending:false, lastNote:0, idleT:0,
   async api(p,body){
     const o={method:body?'POST':'GET',headers:{'X-Remote-Token':this.tok}};
@@ -624,6 +667,10 @@ const R={
     const qk=new URLSearchParams(location.search).get('k'); if(qk){ this.tok=qk; try{ localStorage.setItem('alhRemoteTok',qk); }catch(e){} }
     Keyboard.init();
     paintIcons(document);
+    // اتجاه الشاشة: أفقي ← عمودي ← عمودي (الجهة الثانية)
+    try{ const r=+localStorage.getItem('alhRemoteRot'); if(r===90||r===270) this.setRot(r,true); }catch(e){}
+    $('#rotBtn').onclick=$('#pairRot').onclick=()=>this.cycleRot();
+    $('#micInd').onclick=()=>this.toggleListen();
     $('#nav').addEventListener('click',e=>{ const b=e.target.closest('[data-go]'); if(b) this.show(b.dataset.go); });
     addEventListener('pointerdown',()=>this.wake(),true);
     setInterval(()=>this.clock(),1000); this.clock();
@@ -649,7 +696,32 @@ const R={
   },
   unpair(){ this.tok=''; try{ localStorage.removeItem('alhRemoteTok'); }catch(e){} this.pairUI(); },
   /* ---------- الحالة ---------- */
-  start(){ $('#pair').hidden=true; $('#app').hidden=false; this.show('home'); this.loop(); this.loadTasks(); },
+  start(){ $('#pair').hidden=true; $('#app').hidden=false; this.show('home'); this.loop(); this.loadTasks(); this.loadPrefs(); this.probeAgent(); setInterval(()=>this.probeAgent(),15000); },
+  /* ---------- المساعد المحلي بالريموت (المايك + الفلاشة) على 127.0.0.1:8771 ---------- */
+  AG:'http://127.0.0.1:8771',
+  async ag(p,body,ms=8000){
+    const c=new AbortController(), t=setTimeout(()=>c.abort(),ms);
+    try{ const o=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:c.signal}:{signal:c.signal};
+      const r=await fetch(this.AG+p,o); const j=await r.json(); if(j&&j.error) throw new Error(j.error); return j; }
+    finally{ clearTimeout(t); }
+  },
+  async probeAgent(){
+    const was=JSON.stringify(this.agent);
+    try{ this.agent=await this.ag('/hello',null,1500); }catch(e){ this.agent=null; }
+    if(!this.lsT) this.listenTick();
+    if(JSON.stringify(this.agent)!==was&&this.tab==='home') this.renderHome();
+  },
+  feat(k){ const f=this.st.feat; return !f||f[k]!==false; },
+  async loadPrefs(){ try{ const p=await this.api('/api/prefs'); if(p&&[0,90,270].includes(p.rot)&&p.rot!==this.rot) this.setRot(p.rot,true); }catch(e){} },
+  setRot(r,silent){
+    this.rot=r; const h=document.documentElement; if(r) h.dataset.rot=r; else delete h.dataset.rot;
+    try{ localStorage.setItem('alhRemoteRot',r); }catch(e){}
+    requestAnimationFrame(()=>{ this.fitPad(); Keyboard.fit&&Keyboard.fit(); });
+    if(silent) return;
+    this.toast(r===0?'الشاشة: أفقي':r===90?'الشاشة: عمودي':'الشاشة: عمودي (الجهة الثانية)');
+    if(this.tok) this.api('/api/prefs',{rot:r}).catch(()=>{});
+  },
+  cycleRot(){ this.setRot({0:90,90:270,270:0}[this.rot]||0); },
   async loop(){
     while(this.tok){
       try{ const r=await this.api('/api/state?v='+this.v+'&wait=15'); this.online=!!r.board; if(r.v!==this.v){ this.v=r.v; this.st=r.state||{}; this.onState(); } }
@@ -694,7 +766,7 @@ const R={
     if(t==='home') this.renderHome();
     if(t==='write') this.renderWrite();
     if(t==='ptr') this.renderPtr();
-    if(t==='files') this.loadFiles(this.path);
+    if(t==='files'){ if(this.src==='usb') this.loadUsb(this.upath); else this.loadFiles(this.path); }
     if(t==='tasks') this.renderTasks();
     Keyboard.hide&&Keyboard.hide();
   },
@@ -702,23 +774,28 @@ const R={
   renderHome(){
     const s=this.st, pk=s.picked||{}, pg=s.page||{}, el=$('[data-tab=home]');
     const pgTxt=pg.total?`${pg.kind==='pdf'?'صفحة':pg.kind==='slides'?'شريحة':'صفحة السبورة'} ${nf(pg.cur)} من ${nf(pg.total)}`:'';
+    const voiceOn=this.feat('voice')&&!!(this.agent&&this.agent.mic), usbOn=this.feat('usb');
     el.innerHTML=`<div class="grid">
       <button class="tile pick" data-c="pick"><span class="dice"><svg class="i" data-i="dice"></svg></span><span class="nm">${pk.name?esc(pk.name):'القرعة'}<small>${pk.name?`باقي ${nf(pk.left)} من ${nf(pk.total)}`:'اختيار طالب عشوائي — بدون تكرار'}</small></span></button>
+      <button class="tile voice${voiceOn?'':' hide'}" data-c="voice"></button>
+      <button class="tile acc" data-c="board"><svg class="i" data-i="board"></svg>السبورة</button>
       <button class="tile" data-c="prev"><svg class="i" data-i="chevR"></svg>السابق</button>
       <button class="tile" data-c="next"><svg class="i" data-i="chevL"></svg>التالي</button>
-      <button class="tile acc" data-c="board"><svg class="i" data-i="board"></svg>السبورة</button>
       <button class="tile" data-c="${s.locked?'unlock':'lock'}"><svg class="i" data-i="${s.locked?'unlock':'lock'}"></svg>${s.locked?'فتح القفل':'قفل الشاشة'}</button>
       <button class="tile" data-c="role"><svg class="i" data-i="users"></svg>${esc(s.roleName||'المستخدم')}</button>
       <button class="tile" data-c="curtain"><svg class="i" data-i="curtain"></svg>${s.curtain?'كشف الستارة':'ستارة'}</button>
       <button class="tile" data-c="undo"><svg class="i" data-i="undo"></svg>تراجع</button>
       <button class="tile" data-c="redo"><svg class="i" data-i="redo"></svg>إعادة</button>
       <button class="tile" data-c="pickReset"><svg class="i" data-i="restart"></svg>تصفير القرعة</button>
-      <button class="tile" data-c="home"><svg class="i" data-i="home"></svg>الشاشة الرئيسية</button>
+      <button class="tile hz wide" data-c="home"><svg class="i" data-i="home"></svg>الشاشة الرئيسية</button>
+      <button class="tile hz wide${usbOn?'':' hide'}" data-c="usb"><svg class="i" data-i="flash"></svg>فلاشة الريموت ← الصبورة</button>
     </div>${pgTxt?`<div class="pgline" style="position:absolute;bottom:2px;left:14px">${pgTxt}</div>`:''}`;
-    paintIcons(el);
+    paintIcons(el); this.paintListen();
     el.onclick=e=>{ const b=e.target.closest('[data-c]'); if(!b) return; const c=b.dataset.c;
       if(c==='role') return this.roleBox();
       if(c==='unlock') return this.unlockBox();
+      if(c==='voice') return this.toggleListen();
+      if(c==='usb'){ this.src='usb'; this.upath=''; return this.show('files'); }
       this.cmd({a:c}); if(c==='pick') b.querySelector('.nm').firstChild.textContent='…'; };
   },
   roleBox(){
@@ -776,7 +853,11 @@ const R={
   clearPad(){ const cv=$('#wCv'); if(cv) cv.getContext('2d').clearRect(0,0,cv.width,cv.height); },
   bindPad(pad,kind){
     let id=null, last=null, buf=[], lastSend=0;
-    const pt=e=>{ const r=pad.getBoundingClientRect(); return [(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.width]; };
+    const pt=e=>{ const r=pad.getBoundingClientRect(); let x,y,w;      // الشاشة ممكن تكون ملفوفة (عمودي)
+      if(this.rot===90){ x=e.clientY-r.top; y=r.right-e.clientX; w=r.height; }
+      else if(this.rot===270){ x=r.bottom-e.clientY; y=e.clientX-r.left; w=r.height; }
+      else { x=e.clientX-r.left; y=e.clientY-r.top; w=r.width; }
+      return [x/w,y/w]; };
     const send=(ph)=>{ if(kind==='ink'){ if(buf.length||ph!=='m') this.cmd({a:'ink',id,ph,pts:buf.splice(0),c:this.color,k:this.pen}); } };
     pad.onpointerdown=e=>{ e.preventDefault(); pad.setPointerCapture(e.pointerId); id=Math.random().toString(36).slice(2,9); last=pt(e);
       const h=$('#wHint'); if(h) h.hidden=true;
@@ -798,12 +879,92 @@ const R={
   },
   renderFiles(){
     const r=this.files, el=$('[data-tab=files]'), ic=e=>e.dir?'folder':({pdf:'pdf',pptx:'slides',docx:'word',xlsx:'table',png:'image',jpg:'image',jpeg:'image',webp:'image',board:'board'}[e.ext]||'doc');
-    el.innerHTML=`<div class="bar">${r.path?`<button class="btn" data-up="1"><svg class="i" data-i="chevR"></svg>رجوع</button>`:''}<span class="path">${r.path?esc(r.path.split('/').slice(-1)[0]):'المجلدات'}</span></div>
-      <div class="list">${r.items.length?r.items.map((e,i)=>`<button class="row" data-i="${i}"><span class="ic"><svg class="i" data-i="${ic(e)}"></svg></span><span class="nm">${esc(e.name)}</span>${e.dir?'':`<small>${fmt(e.size)}</small>`}</button>`).join(''):'<div class="empty">ماكو ملفات هنا</div>'}</div>`;
+    el.innerHTML=`<div class="bar">${this.segHTML()}${r.path?`<button class="btn" data-up="1"><svg class="i" data-i="chevR"></svg>رجوع</button>`:''}<span class="path">${r.path?esc(r.path.split('/').slice(-1)[0]):'المجلدات'}</span></div>
+      <div class="list">${r.items.length?r.items.map((e,i)=>`<button class="row" data-i="${i}"><span class="ic"><svg class="i" data-i="${ic(e)}"></svg></span><span class="nm">${e.dir?esc(e.name):fname(e.name)}</span>${e.dir?'':`<small>${fmt(e.size)}</small>`}</button>`).join(''):'<div class="empty">ماكو ملفات هنا</div>'}</div>`;
     paintIcons(el);
-    el.onclick=e=>{ if(e.target.closest('[data-up]')){ this.loadFiles(r.parent||''); return; }
+    el.onclick=e=>{ if(this.segClick(e)) return; if(e.target.closest('[data-up]')){ this.loadFiles(r.parent||''); return; }
       const b=e.target.closest('.row[data-i]'); if(!b) return; const it=r.items[+b.dataset.i];
       if(it.dir) this.loadFiles(it.path); else { this.cmd({a:'open',path:it.path,name:it.name,ext:it.ext,size:it.size,mtime:it.mtime}); this.toast('جاري فتح '+it.name); } };
+  },
+  segHTML(){
+    if(!this.feat('usb')) return '';
+    return `<div class="seg"><button data-src="board" class="${this.src==='board'?'on':''}"><svg class="i" data-i="board"></svg>الصبورة</button><button data-src="usb" class="${this.src==='usb'?'on':''}"><svg class="i" data-i="flash"></svg>الفلاشة</button></div>`;
+  },
+  segClick(e){ const b=e.target.closest('[data-src]'); if(!b) return false; this.src=b.dataset.src; this.show('files'); return true; },
+  /* ---------- فلاشة الريموت ---------- */
+  async loadUsb(path){
+    const el=$('[data-tab=files]');
+    el.innerHTML=`<div class="bar">${this.segHTML()}</div><div class="empty">جاري قراءة الفلاشة…</div>`; paintIcons(el); el.onclick=e=>this.segClick(e);
+    if(!this.agent){ await this.probeAgent(); }
+    if(!this.agent){ el.querySelector('.empty').innerHTML='برنامج الفلاشة مو شغال بالريموت.<br>أعد تشغيل الريموت، وإذا بقت المشكلة أعد تنصيبه من إعدادات الصبورة ← الريموت.'; return; }
+    try{ this.ufiles=await this.ag('/usb/ls?path='+encodeURIComponent(path||''),null,15000); this.upath=this.ufiles.path; this.renderUsb(); }
+    catch(e){ el.querySelector('.empty').textContent='تعذر قراءة الفلاشة — '+e.message; }
+  },
+  renderUsb(){
+    const r=this.ufiles, el=$('[data-tab=files]'), ic=e=>e.dir?'folder':({pdf:'pdf',pptx:'slides',docx:'word',xlsx:'table',png:'image',jpg:'image',jpeg:'image',webp:'image',board:'board',mp4:'video'}[e.ext]||'doc');
+    el.innerHTML=`<div class="bar">${this.segHTML()}${r.path?`<button class="btn" data-up="1"><svg class="i" data-i="chevR"></svg>رجوع</button>`:''}<span class="path">${r.path?esc(r.path.split('/').slice(-1)[0]):'فلاشات الريموت'}</span>
+        ${r.path?'':`<button class="btn" data-ej="1"><svg class="i" data-i="eject"></svg>فصل</button>`}</div>
+      <div class="list">${r.items.length?r.items.map((e,i)=>`<button class="row" data-i="${i}"><span class="ic"><svg class="i" data-i="${r.path?ic(e):'flash'}"></svg></span><span class="nm">${e.dir?esc(e.name):fname(e.name)}</span>${e.dir?(e.drive?`<small>${esc(e.drive)}</small>`:''):`<small>${fmt(e.size)}</small>`}</button>`).join('')
+        :`<div class="empty">${r.path?'المجلد فارغ':'اشبك فلاشة بالريموت (منفذ USB أو الموزّع)، وانتظر ثواني'}</div>`}</div>`;
+    paintIcons(el);
+    el.onclick=async e=>{ if(this.segClick(e)) return;
+      if(e.target.closest('[data-up]')){ this.loadUsb(r.parent||''); return; }
+      if(e.target.closest('[data-ej]')){ try{ await this.ag('/usb/eject',{}); this.toast('تكدر تسحب الفلاشة ✓'); }catch(x){ this.toast(x.message); } return; }
+      const b=e.target.closest('.row[data-i]'); if(!b) return; const it=r.items[+b.dataset.i];
+      if(it.dir) this.loadUsb(it.path); else this.usbSheet(it); };
+    if(!r.path&&!r.items.length){ clearTimeout(this.usbT); this.usbT=setTimeout(()=>{ if(this.tab==='files'&&this.src==='usb'&&!this.upath) this.loadUsb(''); },4000); }
+  },
+  usbSheet(it){
+    const ov=document.createElement('div'); ov.className='ov';
+    ov.innerHTML=`<div class="box"><h2 style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fname(it.name)}</h2><p>${fmt(it.size)} — من فلاشة الريموت</p>
+      <div class="sheet"><button class="btn pri" data-s="open"><svg class="i" data-i="send"></svg>انسخه للصبورة وافتحه</button>
+      <button class="btn" data-s="copy"><svg class="i" data-i="download"></svg>انسخه للصبورة بس</button>
+      <button class="btn" data-s="x">إلغاء</button></div></div>`;
+    document.body.appendChild(ov); paintIcons(ov);
+    ov.onclick=e=>{ const b=e.target.closest('[data-s]'); if(!b) return; ov.remove(); if(b.dataset.s!=='x') this.usbSend([it.path],b.dataset.s==='open',it.name); };
+  },
+  async usbSend(paths,open,name){
+    let pr=$('#prog'); if(!pr){ pr=document.createElement('div'); pr.id='prog'; pr.className='prog'; document.body.appendChild(pr); }
+    pr.hidden=false; pr.innerHTML=`<b>جاري النسخ: ${esc(name||'')}</b><i></i>`;
+    let job; try{ job=await this.ag('/usb/send',{paths,open}); }catch(e){ pr.hidden=true; this.toast(e.message); return; }
+    const tick=async()=>{
+      let j; try{ j=await this.ag('/usb/job?id='+job.id); }catch(e){ j={state:'error',error:e.message}; }
+      const p=j.total?Math.round(j.done/j.total*100):0; pr.querySelector('i').style.setProperty('--p',p+'%');
+      pr.querySelector('b').textContent=j.state==='run'?`جاري النسخ ${nf(p)}٪ — ${j.name||''}`:'';
+      if(j.state==='run') return setTimeout(tick,500);
+      pr.hidden=true;
+      if(j.state==='ok') this.toast(open?'انفتح على الصبورة ✓':'انحفظ بالصبورة ← المستندات ← من الريموت ✓'); else this.toast('فشل النسخ: '+(j.error||''));
+    };
+    tick();
+  },
+  /* ---------- الاستماع المستمر: الكلام يطلع نص على الصبورة بدون زر ---------- */
+  listenPref(){ try{ return localStorage.getItem('alhListen')!=='0'; }catch(e){ return true; } },
+  async listenTick(){
+    clearTimeout(this.lsT);
+    if(this.agent&&this.agent.mic){
+      try{
+        let st=await this.ag('/listen',null,1500);
+        const want=this.feat('voice')&&this.listenPref();
+        if(st.on!==want) st=await this.ag('/listen',{on:want},3000);
+        this.ls=st;
+      }catch(e){ this.ls=null; }
+    } else this.ls=null;
+    this.paintListen();
+    this.lsT=setTimeout(()=>this.listenTick(),this.ls&&this.ls.on?700:3000);
+  },
+  toggleListen(){
+    const on=!this.listenPref(); try{ localStorage.setItem('alhListen',on?'1':'0'); }catch(e){}
+    this.toast(on?'المايك شغّال — الكلام يطلع نص على الصبورة':'المايك متوقف'); this.listenTick();
+  },
+  paintListen(){
+    const L=this.ls, b=$('#micInd'), show=!!(L&&this.feat('voice'));
+    if(b){ b.hidden=!show; b.className='rotb mic '+(!L||!L.on?'off':L.state==='speech'?'speech':L.state==='nomic'?'off':'on');
+      b.innerHTML=icon(L&&L.on?'mic':'micOff'); }
+    const t=$('[data-c=voice]'); if(!t) return;
+    const lbl=!L?'المايك مو موصول':!L.on?'المايك متوقف — المس حتى يشتغل':L.state==='nomic'?'اشبك المايك USB':L.state==='speech'?'يسمع… 🎙':'المايك يسمع — تكلّم';
+    const last=L&&L.last&&L.last.length?L.last[L.last.length-1]:'';
+    t.classList.toggle('dis',!L); t.classList.toggle('live',!!(L&&L.on&&L.state==='speech')); t.classList.toggle('paused',!!(L&&!L.on));
+    t.innerHTML=`${icon(L&&L.on?'mic':'micOff')}<span>${esc(lbl)}</span>${last&&L.on?`<small class="vlast">${esc(last)}</small>`:''}`;
   },
   /* ---------- مهام المعلم ---------- */
   async loadTasks(){ try{ const r=await this.api('/api/tasks'); this.tasks=r.items||[]; if(this.tab==='tasks') this.renderTasks(); }catch(e){} },
@@ -819,6 +980,8 @@ const R={
     el.onclick=e=>{ const b=e.target.closest('[data-t]'); if(!b) return; const a=b.dataset.t; if(a==='add') add(); else this.taskOp({op:a,id:b.dataset.id}); };
   }
 };
+/* اسم الملف: الامتداد (.pdf) يبقى بمكانه حتى لو الاسم عربي */
+const fname=n=>{ const m=String(n).match(/^(.*?)(\.[A-Za-z0-9]{1,5})$/); return m&&m[1]?`${esc(m[1])}<bdi dir="ltr">${esc(m[2])}</bdi>`:esc(n); };
 const fmt=b=>b<1e3?b+' B':b<1e6?(b/1e3).toFixed(0)+' KB':(b/1e6).toFixed(1)+' MB';
 addEventListener('resize',()=>R.fitPad());
 R.init();
